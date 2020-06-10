@@ -1,2 +1,6 @@
+#IDE and OS files and directories
+.vs_code/
+
+
 #Ignore gbif-xeno-canto dataset info
 xeno_canto_bsfatw/
