@@ -1,5 +1,5 @@
 #IDE and OS files and directories
-.vs_code/
+.vscode/
 
 
 #Ignore gbif-xeno-canto dataset info
