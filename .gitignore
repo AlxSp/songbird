@@ -4,7 +4,7 @@
 
 #Ignore gbif-xeno-canto dataset info
 xeno_canto_bsfatw/
-
+data_dictionary/
 
 #Exceptions
 !.gitkeep

@@ -16,3 +16,18 @@
 ├── X    
 └── X2
 ```
+
+
+```python
+sample dict:
+
+sample_dict = {
+    'gbifID' : int, #unique gbifID 
+    'recording_link' : string, #link to media
+    'decimal_latitude' : float,
+    'decimal_longitude': float,
+    'date' : datetime_string,
+    'behavior' : [], # > array of strings 
+    'background_birds' : [], # > array of species key ints 
+}
+```
