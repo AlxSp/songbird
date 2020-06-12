@@ -100,11 +100,14 @@ def get_species_info(species_key):
     species_rows = occurrence_df[occurrence_df['speciesKey'] == species_key]
     genus_key = species_rows['genusKey'].unique()
     scientific_name = species_rows['species'].unique()
+    common_name = species_rows['vernacularName'].unique()
     if len(genus_key) > 1:
-        print("WARNING: species with key: {0} has multiple 'genus keys': {1}".format(species_key, genus_key))
+        print("WARNING: species with key: {0} has multiple 'genus keys': {1}! Picking the first one!".format(species_key, genus_key))
     if len(scientific_name) > 1:
-        print("WARNING: species with key: {0} has multiple 'scientific names': {1}".format(species_key, scientific_name))
-    return genus_key[0], scientific_name[0]
+        print("WARNING: species with key: {0} has multiple 'scientific names': {1}! Picking the first one!".format(species_key, scientific_name))
+    if len(common_name) > 1:
+        print("WARNING: species with key: {0} has multiple 'common names': {1}! Picking the first one!".format(species_key, common_name))
+    return genus_key[0], scientific_name[0], common_name[0]
 
 def add_sample_dict(species_samples_dict, progress_bar, gbif_id, decimal_latitude, decimal_longitude, event_date, behavior, associated_taxa):
     link, time_sec, audio_format = get_audio_recording_info(gbif_id)
@@ -150,6 +153,7 @@ multimedia_df.set_index('gbifID', inplace = True)
 
 #Define all undefined species as unknown species
 occurrence_df['species'] = occurrence_df['species'].fillna('Unkown').str.lower()
+occurrence_df['vernacularName'] = occurrence_df['vernacularName'].fillna('Unkown').str.lower()
 occurrence_df['speciesKey'] = occurrence_df['speciesKey'].fillna(0).astype(int)
 occurrence_df['genusKey'] = occurrence_df['genusKey'].fillna(0).astype(int)
 
@@ -159,9 +163,8 @@ species_to_key_dict = dict(zip(species_name_key_df['species'], species_name_key_
 
 species_background_occurrence_dict = {}
 
-#Create Species info
+#Define Species info data
 species_info_columns = ['common_name','scientific_name', 'species_key', 'genus_key', 'forefront_recordings', 'background_recordings']
-#species_info_df = pd.DataFrame(columns = species_info_columns)
 species_info_arr = []
 #Create sample info
 data_dictionary_path = os.path.join('dataset', 'data_dictionary')
@@ -170,35 +173,40 @@ samples_info_path = os.path.join(data_dictionary_path, 'samples_info')
 samples_per_species = occurrence_df.groupby(['speciesKey']) #group samples of each species
 progress_bar = ProgressBar(len(occurrence_df))
 for species_key, samples in samples_per_species:    #iterate over each species
-
-    species_samples_path = os.path.join(samples_info_path, str(species_key) + '.json')
-
-    genus_key, scientific_name = get_species_info(species_key)
-
+    genus_key, scientific_name, common_name = get_species_info(species_key)
+    #add species info 'row'
     species_info_arr.append([
-        None,
+        common_name,
         scientific_name, 
         species_key, 
         genus_key, 
         len(samples), 
         0
     ])
-
+    #add species sample info
     data_dict = {
         'species_key' : int(species_key),
         'genus_key' : int(genus_key),
         'scientific_name' : scientific_name,
-        'common_name' : None,
+        'common_name' : common_name,
         'samples' : {} #create and array of sample dicts
     }
     samples.apply(lambda row: add_sample_dict(data_dict['samples'], progress_bar, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa']), axis=1)
-
+    #write species sample info
+    species_samples_path = os.path.join(samples_info_path, str(species_key) + '.json')
     with open(species_samples_path, 'w') as outfile:
         json.dump(data_dict, outfile, indent=4)
-
+#Create dataframe for species info
 species_info_df = pd.DataFrame(data = species_info_arr, columns = species_info_columns)
 species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
 species_info_df['background_recordings'] = [species_background_occurrence_dict.get(key, 0) for key in species_info_df['species_key']]
+#clean up unknown species row
+species_info_df.loc[species_info_df['species_key'] == 0, 'common_name'] = 'unknown'
+species_info_df.loc[species_info_df['species_key'] == 0, 'genus_key'] = 0
+
 species_info_df.to_csv(species_info_path, index=False)
+
+print()
+print("data dictionary creation completed")
 
 
