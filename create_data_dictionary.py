@@ -23,11 +23,9 @@ class ProgressBar:
             self.start_time = datetime.datetime.now()
         self.mean_time_sec = (datetime.datetime.now() - self.start_time).total_seconds() / self.progress_count * (self.number_of_samples - self.progress_count)
 
-
     def print(self):
         min, sec = divmod(self.mean_time_sec, 60)
         hr, min = divmod(min, 60)
-        #hour, min, sec = self.mean_time_sec.strftime("%H %M %S").split()
         print(self.bar_string.format('#' * int(self.progress_count / self.number_of_samples * self.bar_length) , self.progress_count, self.number_of_samples, hr, min, sec), end="\r", flush=True )
 
 def unclear_behavior(behavior):

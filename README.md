@@ -6,13 +6,20 @@
 
 ## Project Structure:
 ```
-├──dataset
-│   ├── x  
-│   └── species_info.csv  
 ├──xeno_canto_bsfatw  
 │   ├── occurrence.txt  
 │   ├── ...
-│   └── multimedia.txt  
+│   └── multimedia.txt
+│
+├──dataset  
+│   ├──data_dictionary
+│   │   ├── species_info.csv
+│   │   └──samples_info
+│   │       ├── species_key_0.json
+│   │       ├── ...
+│   │       └── species_key_N.json
+│   ├──raw
+│
 ├── X    
 └── X2
 ```
