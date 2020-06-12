@@ -86,10 +86,14 @@ def get_formatted_date(date):
         return None
 
 def get_audio_recording_info(gbif_id):
-    audio_info = multimedia_df.loc[(multimedia_df['gbifID'] == gbif_id) & (multimedia_df['format'] == 'audio/mpeg') ]
-    link =  None if pd.isnull(audio_info.iloc[0]['identifier']) else audio_info.iloc[0]['identifier']
-    time_sec = None if pd.isnull(audio_info.iloc[0]['description']) else int(re.sub("\D", "", audio_info.iloc[0]['description']))
-    audio_format = None if pd.isnull(audio_info['format'].iloc[0]) else audio_info['format'].iloc[0].replace('audio/', '')
+    link = multimedia_df.at[gbif_id, 'identifier']
+    time_sec = multimedia_df.at[gbif_id, 'description']
+    audio_format = multimedia_df.at[gbif_id, 'format']
+
+    link = link if not pd.isnull(link) else None
+    time_sec = int(re.sub("\D", "", time_sec)) if not pd.isnull(time_sec) else None
+    audio_format = audio_format.replace('audio/', '') if not pd.isnull(audio_format) else None
+
     return link, time_sec, audio_format
 
 def get_species_info(species_key):
@@ -102,7 +106,7 @@ def get_species_info(species_key):
         print("WARNING: species with key: {0} has multiple 'scientific names': {1}".format(species_key, scientific_name))
     return genus_key[0], scientific_name[0]
 
-def add_sample_dict(species_samples_dict, gbif_id, decimal_latitude, decimal_longitude, event_date, behavior, associated_taxa):
+def add_sample_dict(species_samples_dict, progress_bar, gbif_id, decimal_latitude, decimal_longitude, event_date, behavior, associated_taxa):
     link, time_sec, audio_format = get_audio_recording_info(gbif_id)
     gbif_id_int = int(gbif_id)
     species_samples_dict[gbif_id_int] = {
@@ -116,7 +120,8 @@ def add_sample_dict(species_samples_dict, gbif_id, decimal_latitude, decimal_lon
         'behavior' : get_behavior(behavior),
         'background_birds' : get_associated_birds(associated_taxa),
     }
-
+    progress_bar.progress()
+    progress_bar.print()
 
 gbif_path = 'xeno_canto_bsfatw'
 
@@ -132,7 +137,7 @@ print("Dropping empty columns of occurrence_df")
 occurrence_df.drop(occurrence_columns_with_no_values, axis=1, inplace=True)
 
 image_link_indices = multimedia_df[multimedia_df['format'] != 'audio/mpeg'].index
-
+multimedia_df.drop(image_link_indices, inplace = True)
 
 multimedia_columns_with_no_values = []
 for column in multimedia_df.columns:
@@ -140,6 +145,8 @@ for column in multimedia_df.columns:
         multimedia_columns_with_no_values.append(column)
 print("Dropping empty columns of multimedia_df")
 multimedia_df.drop(multimedia_columns_with_no_values, axis=1, inplace=True)
+
+multimedia_df.set_index('gbifID', inplace = True)
 
 #Define all undefined species as unknown species
 occurrence_df['species'] = occurrence_df['species'].fillna('Unkown').str.lower()
@@ -168,15 +175,6 @@ for species_key, samples in samples_per_species:    #iterate over each species
 
     genus_key, scientific_name = get_species_info(species_key)
 
-    # species_info_arr.append({
-    #     'common_name' : None,
-    #     'scientific_name' : scientific_name, 
-    #     'species_key' : species_key, 
-    #     'genus_key' : genus_key, 
-    #     'forefront_recordings' : len(samples), 
-    #     'background_recordings' : 0
-    # })
-
     species_info_arr.append([
         None,
         scientific_name, 
@@ -193,23 +191,7 @@ for species_key, samples in samples_per_species:    #iterate over each species
         'common_name' : None,
         'samples' : {} #create and array of sample dicts
     }
-
-    for index, sample in samples.iterrows():    #iterate over each sample of the species
-        gbifID = sample['gbifID']
-        link, time_sec, audio_format = get_audio_recording_info(gbifID)
-        data_dict['samples'][int(gbifID)] = {
-            'gbifID' : int(gbifID),
-            'recording_link' : link,
-            'recording_time_sec' : time_sec,
-            'audio_format' : audio_format,
-            'decimal_latitude' : float(sample['decimalLatitude']) if not pd.isnull(sample['decimalLatitude']) else None,
-            'decimal_longitude': float(sample['decimalLongitude'])if not pd.isnull(sample['decimalLongitude']) else None,
-            'date' : get_formatted_date(sample['eventDate']),
-            'behavior' : get_behavior(sample['behavior']),
-            'background_birds' : get_associated_birds(sample['associatedTaxa']),
-        }
-        progress_bar.progress()
-        progress_bar.print()
+    samples.apply(lambda row: add_sample_dict(data_dict['samples'], progress_bar, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa']), axis=1)
 
     with open(species_samples_path, 'w') as outfile:
         json.dump(data_dict, outfile, indent=4)
