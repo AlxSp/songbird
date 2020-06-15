@@ -2,7 +2,11 @@
 
 ## Setup: 
 1. Download the dataset: [Xeno-canto - Bird sounds from around the world](https://www.gbif.org/dataset/b1047888-ae52-4179-9dd5-5448ea342a24#methodology)
-1. Extract it into the xeno_canto_bsfatw dir
+1. Extract it into the xeno_canto_bsfatw directory
+1. run create_data_dictionary.py
+    - to check out info on the dataset run the meta_data_analysis.ipynb notebook
+1. run download_data.py (Currently downloads only 1 sample)
+1. run audio_analysis for info on the sample 
 
 ## Project Structure:
 ```
