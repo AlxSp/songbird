@@ -35,22 +35,27 @@ def load_species_sample_info(samples_info_path, species_key):
         data = json.load(json_file)
     return data
 
-def download_species_samples(species_sample_dict, destination_path, limit = None):
+def download_species_samples(species_sample_dict, destination_path, limit = float('inf')):
     samples_dict = species_sample_dict['samples']
     samples_path = os.path.join(destination_path, str(species_sample_dict['species_key']))
+
+    sample_num = len(samples_dict) if limit == float('inf') else limit
+    print("Downloading {} samples for {} with species key {}".format(sample_num, species_sample_dict['scientific_name'], species_sample_dict['species_key']))
 
     if not os.path.exists(samples_path):
         os.mkdir(samples_path)
 
     count = 0
     for gbif_id, sample_info in samples_dict.items():
-        file_path = os.path.join(samples_path, str(gbif_id) + '.mpeg')
+        file_path = os.path.join(samples_path, str(gbif_id) + '.mp3')
         url_link = sample_info['recording_link']
 
-        r = requests.get(url_link)
-
-        with open(file_path, 'wb') as f:
-            f.write(r.content)
+        response = requests.get(url_link)
+        if response: 
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+        else:
+            print("ERROR CODE: {}! sample {}(gbif_id) with url {} could not be downloaded!".format(response.status_code, gbif_id, url_link))
         
         count += 1
         if (limit <= count):
@@ -59,7 +64,7 @@ def download_species_samples(species_sample_dict, destination_path, limit = None
 parser = argparse.ArgumentParser(description='Download mpeg samples from species described int the data_dictionary directory')
 parser.add_argument('--sample_min', type=int, required=False, default=0,
                         help='set the minimum forefront sample amount a species should have')
-parser.add_argument('--download_max', type=int, required=False, default=0,
+parser.add_argument('--download_max', type=int, required=False, default=float('inf'),
                         help='set the maximum forefront samples that should be downloaded for each species should have')
 
 args = parser.parse_args()
