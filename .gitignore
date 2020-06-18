@@ -1,6 +1,6 @@
 #IDE and OS files and directories
 .vscode/
-
+.DS_Store
 
 #Ignore gbif-xeno-canto dataset info
 xeno_canto_bsfatw/
