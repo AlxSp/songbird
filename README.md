@@ -18,7 +18,7 @@
 
 ## Scripts
 
-* ### create_data_dictionar.py
+* ### create_data_dictionary.py
     Processes files and information in the **xeno_canto_bsfatw/** directory (Setup steps 1 & 2) and creates a data dictionary in the **dataset/** directory. The created files are; 
     species_info.csv, species_sample_info.json and samples_metadata.json and are located in the **dataset/data_dictionary** directory. These files are utilized by the `download_data.py` script.
 
