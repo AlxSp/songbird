@@ -14,6 +14,50 @@
 1. run download_data.py (Currently downloads only 1 sample)
 1. run audio_analysis for info on the sample
 
+---
+
+## Scripts
+
+* ### create_data_dictionar.py
+    Processes files and information in the **xeno_canto_bsfatw/** directory (Setup steps 1 & 2) and creates a data dictionary in the **dataset/** directory. The created files are; 
+    species_info.csv, species_sample_info.json and samples_metadata.json and are located in the **dataset/data_dictionary** directory. These files are utilized by the `download_data.py` script.
+
+* ### download_data.py
+
+    Reads the data dictionary (**dataset/data_dictionary/**) and downloads files in the mp3 format to the **dataset/raw/** directory. It will not download a sample if it is already present in the **dataset/raw/** directory. Creates a download_species_sample_info.json file in the **dataset/data_dictionary/** directory which stores information on downloaded samples and their relation to the species
+
+    **Arguments:**
+    * **sample_min <int_value>**
+
+        set the minimum forefront sample amount a species should have
+
+    * **include_background_samples**
+
+        If this argument is given, background samples are included in the sample min argument and will be downloaded after all forefront samples (if download max has not been reached)
+
+    * **download_max <int_value>**
+
+        set the maximum samples that should be downloaded for each species
+
+    * **exclude_unknown_species**
+
+        If this argument is set, unknown species, with species key 0, will be excluded from the download
+
+    * **include_species_keys <int_value 0> ... <int_value n>**
+
+        Add keys of specific species which samples should be downloaded. If this argument is given only samples for these species will be downloaded.
+
+    * **include_sample_ids <int_value 0> ... <int_value n>**
+
+        Add ids of specific samples which should be downloaded. If this argument is given only these samples will be downloaded.
+
+    * **reset_download_dir**
+
+        If this argument is given, the **dataset/raw/** directory will be completely emptied before samples are downloaded
+    
+## Jupyter Notebooks
+
+
 ## Project Structure:
 ```
 ├──xeno_canto_bsfatw  
@@ -29,7 +73,7 @@
 │   ├──raw
 │   └──processed
 ├── scripts    
-└── X2
+└── jupyter notebooks
 ```
 
 Dictionary in samples_metadata.json
@@ -45,6 +89,7 @@ sample_dict = {
     'background_birds' : [], # > array of species key ints 
 }
 ```
+---
 
 ## References:
 
@@ -52,5 +97,10 @@ sample_dict = {
 * [Mel Frequency Cepstral Coefficient (MFCC) tutorial by practical cryptography](http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/)
 * [Speech Processing for Machine Learning: Filter banks, Mel-Frequency Cepstral Coefficients (MFCCs) and What's In-Between](https://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html)
 
-### ML Papers:
+### Related Research Papers:
 * to be added
+
+---
+current main sample gbif_id:
+
+2243804495
