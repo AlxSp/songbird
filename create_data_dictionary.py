@@ -4,6 +4,7 @@ import time
 import json
 import re
 import os
+import shutil 
 
 class ProgressBar:
     def __init__(self, number_of_samples, bar_length = 50):
@@ -107,7 +108,7 @@ def get_species_info(species_key):
         print("WARNING: species with key: {0} has multiple 'common names': {1}! Picking the first one!".format(species_key, common_name))
     return genus_key[0], scientific_name[0], common_name[0]
 
-def add_sample_dict(species_samples_dict, progress_bar, gbif_id, decimal_latitude, decimal_longitude, event_date, behavior, associated_taxa):
+def add_sample_dict(species_samples_dict, forefront_bird_key, gbif_id, decimal_latitude, decimal_longitude, event_date, behavior, associated_taxa, progress_bar):
     link, time_sec, audio_format = get_audio_recording_info(gbif_id)
     gbif_id_int = int(gbif_id)
     species_samples_dict[gbif_id_int] = {
@@ -119,17 +120,21 @@ def add_sample_dict(species_samples_dict, progress_bar, gbif_id, decimal_latitud
         'decimal_longitude': float(decimal_longitude)if not pd.isnull(decimal_longitude) else None,
         'date' : get_formatted_date(event_date),
         'behavior' : get_behavior(behavior),
-        'background_birds' : get_associated_birds(associated_taxa),
+        'forefront_bird_key' : forefront_bird_key,
+        'background_birds_keys' : get_associated_birds(associated_taxa),
     }
     progress_bar.progress()
     progress_bar.print()
 
-gbif_path = 'xeno_canto_bsfatw'
 
+this_file_dir_path = os.path.dirname(os.path.abspath(__file__))
+
+gbif_path = os.path.join(this_file_dir_path, 'xeno_canto_bsfatw') #absolute path to xeno canto meta data 
+#load relevant txt files as pandas dfs
 occurrence_df = pd.read_csv(os.path.join(gbif_path, 'occurrence.txt'), sep = '\t')
 multimedia_df = pd.read_csv(os.path.join(gbif_path, 'multimedia.txt'), sep = '\t')
 
-
+#Check for columns with no values and delete them
 occurrence_columns_with_no_values = []
 for column in occurrence_df.columns:
     if occurrence_df[column].isnull().all():
@@ -137,16 +142,17 @@ for column in occurrence_df.columns:
 print("Dropping empty columns of occurrence_df")
 occurrence_df.drop(occurrence_columns_with_no_values, axis=1, inplace=True)
 
+#drop rows that do not reperesent audio files 
 image_link_indices = multimedia_df[multimedia_df['format'] != 'audio/mpeg'].index
 multimedia_df.drop(image_link_indices, inplace = True)
-
+#Check for columns with no values and delete them
 multimedia_columns_with_no_values = []
 for column in multimedia_df.columns:
     if multimedia_df[column].isnull().all():
         multimedia_columns_with_no_values.append(column)
 print("Dropping empty columns of multimedia_df")
 multimedia_df.drop(multimedia_columns_with_no_values, axis=1, inplace=True)
-
+#set df index to gbifID
 multimedia_df.set_index('gbifID', inplace = True)
 
 #Define all undefined species as unknown species
@@ -165,11 +171,25 @@ species_background_occurrence_dict = {}
 species_info_columns = ['common_name','scientific_name', 'species_key', 'genus_key', 'forefront_recordings', 'background_recordings']
 species_info_arr = []
 #Create sample info
-data_dictionary_path = os.path.join('dataset', 'data_dictionary')
+data_dictionary_path = os.path.join(this_file_dir_path, 'dataset', 'data_dictionary')
+#check if data_dictionary directory exists
+if os.path.exists(data_dictionary_path):
+    for filename in os.listdir(data_dictionary_path):
+        file_path = os.path.join(data_dictionary_path, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print('Failed to delete {}. Exceptions: {}'.format(file_path, e)) 
+else:
+    os.mkdir(data_dictionary_path)
 
-samples_info_path = os.path.join(data_dictionary_path, 'samples_info')
+samples_metadata_path = os.path.join(data_dictionary_path, 'samples_metadata.json')
 samples_per_species = occurrence_df.groupby(['speciesKey']) #group samples of each species
 progress_bar = ProgressBar(len(occurrence_df))
+samples_metadata = {}
 for species_key, samples in samples_per_species:    #iterate over each species
     genus_key, scientific_name, common_name = get_species_info(species_key)
     #add species info 'row'
@@ -181,19 +201,11 @@ for species_key, samples in samples_per_species:    #iterate over each species
         len(samples), 
         0
     ])
-    #add species sample info
-    data_dict = {
-        'species_key' : int(species_key),
-        'genus_key' : int(genus_key),
-        'scientific_name' : scientific_name,
-        'common_name' : common_name,
-        'samples' : {} #create and array of sample dicts
-    }
-    samples.apply(lambda row: add_sample_dict(data_dict['samples'], progress_bar, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa']), axis=1)
+    samples.apply(lambda row: add_sample_dict(samples_metadata, species_key, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa'], progress_bar), axis=1)
     #write species sample info
-    species_samples_path = os.path.join(samples_info_path, str(species_key) + '.json')
-    with open(species_samples_path, 'w') as outfile:
-        json.dump(data_dict, outfile, indent=4)
+    #species_samples_path = os.path.join(samples_info_path, str(species_key) + '.json')
+with open(samples_metadata_path, 'w') as outfile:
+    json.dump(samples_metadata, outfile, indent=4)
 #Create dataframe for species info
 species_info_df = pd.DataFrame(data = species_info_arr, columns = species_info_columns)
 species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
