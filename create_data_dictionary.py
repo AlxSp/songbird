@@ -59,7 +59,7 @@ sample associated taxa:
 has background sounds: Phylloscopus trochilus|Corvus corone|Dendrocopos major|Turdus philomelos|Cyanistes caeruleus
 has background sounds: Turdus iliacus|Turdus pilaris|Numenius arquata|Corvus cornix|Emberiza citrinella
 '''
-def get_associated_birds(associated_taxa):
+def get_associated_birds(associated_taxa, id_of_sample):
     #check if associated_taxa string is empty, None or nan
     if not associated_taxa or associated_taxa is None or pd.isnull(associated_taxa):
         return []
@@ -69,10 +69,7 @@ def get_associated_birds(associated_taxa):
     bird_species_keys = [species_to_key_dict[taxa] for taxa in split_taxa if species_to_key_dict.get(taxa) is not None]
 
     for key in bird_species_keys:
-        if key in species_background_occurrence_dict:
-            species_background_occurrence_dict[key] += 1
-        else:
-            species_background_occurrence_dict[key] = 1
+        species_samples_info[key]['background_sample_ids'].append(id_of_sample)
 
     return bird_species_keys
 
@@ -90,8 +87,8 @@ def get_audio_recording_info(gbif_id):
     audio_format = multimedia_df.at[gbif_id, 'format']
 
     link = link if not pd.isnull(link) else None
-    time_sec = int(re.sub("\D", "", time_sec)) if not pd.isnull(time_sec) else None
-    audio_format = audio_format.replace('audio/', '') if not pd.isnull(audio_format) else None
+    time_sec = int(re.sub(r"\D", "", time_sec)) if not pd.isnull(time_sec) else None # Remove anything other than digits and convert the digits to int value
+    audio_format = audio_format.replace('audio/', '') if not pd.isnull(audio_format) else None #remove audio/ from format description
 
     return link, time_sec, audio_format
 
@@ -100,17 +97,19 @@ def get_species_info(species_key):
     genus_key = species_rows['genusKey'].unique()
     scientific_name = species_rows['species'].unique()
     common_name = species_rows['vernacularName'].unique()
-    if len(genus_key) > 1:
+    if len(genus_key) > 1:  # check if there is more than one genus key for species key
         print("WARNING: species with key: {0} has multiple 'genus keys': {1}! Picking the first one!".format(species_key, genus_key))
-    if len(scientific_name) > 1:
+    if len(scientific_name) > 1: # check if there is more than one scientific name for species key
         print("WARNING: species with key: {0} has multiple 'scientific names': {1}! Picking the first one!".format(species_key, scientific_name))
-    if len(common_name) > 1:
+    if len(common_name) > 1: # check if there is more than one common name for species key
         print("WARNING: species with key: {0} has multiple 'common names': {1}! Picking the first one!".format(species_key, common_name))
     return genus_key[0], scientific_name[0], common_name[0]
 
 def add_sample_dict(species_samples_dict, forefront_bird_key, gbif_id, decimal_latitude, decimal_longitude, event_date, behavior, associated_taxa, progress_bar):
     link, time_sec, audio_format = get_audio_recording_info(gbif_id)
     gbif_id_int = int(gbif_id)
+    species_samples_info[forefront_bird_key]['forefront_sample_ids'].append(gbif_id_int)
+
     species_samples_dict[gbif_id_int] = {
         'gbifID' : gbif_id_int,
         'recording_link' : link,
@@ -121,7 +120,7 @@ def add_sample_dict(species_samples_dict, forefront_bird_key, gbif_id, decimal_l
         'date' : get_formatted_date(event_date),
         'behavior' : get_behavior(behavior),
         'forefront_bird_key' : forefront_bird_key,
-        'background_birds_keys' : get_associated_birds(associated_taxa),
+        'background_birds_keys' : get_associated_birds(associated_taxa, gbif_id_int),
     }
     progress_bar.progress()
     progress_bar.print()
@@ -165,8 +164,6 @@ occurrence_df['genusKey'] = occurrence_df['genusKey'].fillna(0).astype(int)
 species_name_key_df = occurrence_df[['speciesKey', 'species']]
 species_to_key_dict = dict(zip(species_name_key_df['species'], species_name_key_df['speciesKey']))
 
-species_background_occurrence_dict = {}
-
 #Define Species info data
 species_info_columns = ['common_name','scientific_name', 'species_key', 'genus_key', 'forefront_recordings', 'background_recordings']
 species_info_arr = []
@@ -190,6 +187,8 @@ samples_metadata_path = os.path.join(data_dictionary_path, 'samples_metadata.jso
 samples_per_species = occurrence_df.groupby(['speciesKey']) #group samples of each species
 progress_bar = ProgressBar(len(occurrence_df))
 samples_metadata = {}
+species_samples_info = { species_key : { 'forefront_sample_ids': [], 'background_sample_ids': [] } for species_key in samples_per_species.groups.keys()}
+
 for species_key, samples in samples_per_species:    #iterate over each species
     genus_key, scientific_name, common_name = get_species_info(species_key)
     #add species info 'row'
@@ -201,15 +200,19 @@ for species_key, samples in samples_per_species:    #iterate over each species
         len(samples), 
         0
     ])
+
     samples.apply(lambda row: add_sample_dict(samples_metadata, species_key, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa'], progress_bar), axis=1)
-    #write species sample info
-    #species_samples_path = os.path.join(samples_info_path, str(species_key) + '.json')
+
 with open(samples_metadata_path, 'w') as outfile:
     json.dump(samples_metadata, outfile, indent=4)
+#write species samples info 
+species_info_path = os.path.join(data_dictionary_path, 'species_sample_info.json')
+with open(species_info_path, 'w') as outfile:
+    json.dump(species_samples_info, outfile, indent=4)
 #Create dataframe for species info
 species_info_df = pd.DataFrame(data = species_info_arr, columns = species_info_columns)
 species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
-species_info_df['background_recordings'] = [species_background_occurrence_dict.get(key, 0) for key in species_info_df['species_key']]
+species_info_df['background_recordings'] = [len(species_samples_info[key].get('background_sample_ids', [])) for key in species_info_df['species_key']]
 #clean up unknown species row
 species_info_df.loc[species_info_df['species_key'] == 0, 'common_name'] = 'unknown'
 species_info_df.loc[species_info_df['species_key'] == 0, 'genus_key'] = 0
