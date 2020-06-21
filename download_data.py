@@ -328,7 +328,7 @@ if __name__ == "__main__":
     print("A total of {} new samples will be downloaded".format(len(sample_ids_to_download)))
 
     download_by_sample_ids(sample_ids_to_download, samples_metadata_dict, raw_data_path)
-
+    print()
     print("Completed downloading all samples")
 
     with open(download_species_sample_info_file_path, 'w') as outfile:

@@ -5,6 +5,7 @@
 * librosa
 * matplotlib
 * numpy
+* pandas
 
 ## Setup: 
 1. Download the dataset: [Xeno-canto - Bird sounds from around the world](https://www.gbif.org/dataset/b1047888-ae52-4179-9dd5-5448ea342a24#methodology)
@@ -96,10 +97,19 @@ sample_dict = {
 ### Audio Analysis:
 * [Mel Frequency Cepstral Coefficient (MFCC) tutorial by practical cryptography](http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/)
 * [Speech Processing for Machine Learning: Filter banks, Mel-Frequency Cepstral Coefficients (MFCCs) and What's In-Between](https://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html)
+* [Topic: Spectrogram, Cepstrum and Mel-Frequency Analysis](http://www.speech.cs.cmu.edu/15-492/slides/03_mfcc.pdf)
 
 ### Related Research Papers:
 * to be added
 
+### Related Projects:
+* [Acoustic Detection of Humpback Whales Using a Convolutional Neural Network](https://ai.googleblog.com/2018/10/acoustic-detection-of-humpback-whales.html)
+
+### ML Repository Structure:
+* [ReproduciblePython](https://github.com/trallard/ReproduciblePython)
+* [Structure and automated workflow for a machine learning project — part 1](https://towardsdatascience.com/structure-and-automated-workflow-for-a-machine-learning-project-2fa30d661c1e)
+* [TensorFlow: A proposal of good practices for files, folders and models architecture](https://blog.metaflow.fr/tensorflow-a-proposal-of-good-practices-for-files-folders-and-models-architecture-f23171501ae3)
+* [Cookiecutter Data Science](https://github.com/drivendata/cookiecutter-data-science)
 ---
 current main sample gbif_id:
 
