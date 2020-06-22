@@ -58,6 +58,10 @@
     
 ## Jupyter Notebooks
 
+* ### audio_sample_analysis.ipynb
+
+    Use this notebook to quickly checkout the wave plot and mel spectogram of downloaded samples.
+
 
 ## Project Structure:
 ```
