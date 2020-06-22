@@ -1,11 +1,13 @@
 #IDE and OS files and directories
 .vscode/
 .DS_Store
-
 #Ignore gbif-xeno-canto dataset info
 xeno_canto_bsfatw/
 #Ignore generated datset files and directories
 data_dictionary/
 dataset/
+#Jupyter notebooks
+audio_sample_analysis.ipynb
+
 #Exceptions
 !.gitkeep
