@@ -247,18 +247,24 @@ if __name__ == "__main__":
 
     raw_data_path = os.path.join(dataset_path, 'raw')
     #if reset_download_dir is given delete all samples in dir
-    if args.reset_download_dir:
-        print("Reseting '{}' dir".format(raw_data_path))
+    if not os.path.isdir(raw_data_path): #check if raw direcotry exists in dataset/
+        print("Creating '{}' directory for downloads.".format(raw_data_path))
         empty_or_create_dir(raw_data_path)
-        downloaded_sample_ids = []
+        downloaded_sample_ids = []          
         download_species_sample_info = {}
-    else:   #load already downloaded samples and load or create download_species_sample_info
-        downloaded_sample_ids = get_downloaded_sample_ids(raw_data_path) #get ids of samples that have already been downloaded
-        if not os.path.exists(download_species_sample_info_file_path):
-            download_species_sample_info = generate_download_species_sample_info(downloaded_sample_ids, samples_metadata_dict, download_species_sample_info_file_path)
-        else: 
-            with open(download_species_sample_info_file_path) as f:
-                download_species_sample_info = {int(species_key): info for species_key, info in json.load(f).items()}
+    else:
+        if args.reset_download_dir:
+            print("Reseting '{}' dir".format(raw_data_path))
+            empty_or_create_dir(raw_data_path)
+            downloaded_sample_ids = []
+            download_species_sample_info = {}
+        else:   #load already downloaded samples and load or create download_species_sample_info
+            downloaded_sample_ids = get_downloaded_sample_ids(raw_data_path) #get ids of samples that have already been downloaded
+            if not os.path.exists(download_species_sample_info_file_path):
+                download_species_sample_info = generate_download_species_sample_info(downloaded_sample_ids, samples_metadata_dict, download_species_sample_info_file_path)
+            else: 
+                with open(download_species_sample_info_file_path) as f:
+                    download_species_sample_info = {int(species_key): info for species_key, info in json.load(f).items()}
     #make sure only one of the two options is given
     if args.include_species_keys and args.include_sample_ids:
         raise Exception('Both include_species_keys and include_sample_ids were given! Please only give one or the other!')
