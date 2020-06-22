@@ -89,7 +89,7 @@ def get_audio_recording_info(gbif_id):
     link = link if not pd.isnull(link) else None
     time_sec = int(re.sub(r"\D", "", time_sec)) if not pd.isnull(time_sec) else None # Remove anything other than digits and convert the digits to int value
     audio_format = audio_format.replace('audio/', '') if not pd.isnull(audio_format) else None #remove audio/ from format description
-
+    audio_format += '/mp3'
     return link, time_sec, audio_format
 
 def get_species_info(species_key):
