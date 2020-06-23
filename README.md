@@ -1,6 +1,10 @@
 # Songbird Project
 
-### Required Modules:
+
+## Requirements 
+* Python 3.6+
+
+### Modules:
 * requests
 * librosa
 * matplotlib
