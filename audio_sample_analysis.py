@@ -281,6 +281,63 @@ def z_score_peak_detection(time_series : np.array, lag : int, threshold : float,
 
     return signal_peaks
 
+def detailed_z_score_peak_detection(time_series : np.array, lag : int, threshold : float, influence : float):
+    #initialize mean and std lag window values as well as time series lag window
+    filtered_time_series_window = np.array(time_series[:lag])
+    lag_window_mean = np.mean(time_series[:lag])
+    lag_window_std = np.std(time_series[:lag])
+    
+    #initialize singal peaks array
+    signal_peaks = np.zeros((time_series.shape))  # array denoting if there is a psoitive or negative peak
+    signal_means = [lag_window_mean]
+    signal_stds = [lag_window_std]
+
+    for i in range(lag, len(time_series)):
+        #shift window to the left
+        np.roll(filtered_time_series_window, -1)
+        #if the series value minus the current mean is larger then the threshold times the current std
+        if abs(time_series[i] - lag_window_mean) > threshold * lag_window_std:
+            if time_series[i] > lag_window_mean: #check for positive or negative peak
+                signal_peaks[i] = 1
+            else:
+                signal_peaks[i] = -1
+            filtered_time_series_window[-1] = influence * time_series[i] + (1 - influence) * filtered_time_series_window[-2]
+        else: #if no peak was detected
+            filtered_time_series_window[-1] = time_series[i]
+
+        lag_window_mean = np.mean(filtered_time_series_window)
+        lag_window_std = np.std(filtered_time_series_window)
+
+        signal_means.append(lag_window_mean)
+        signal_stds.append(lag_window_std)
+
+    return signal_peaks, np.asarray(signal_means), np.asarray(signal_stds)
+
+    signals = np.zeros(len(y))
+    filteredY = np.array(y)
+    avgFilter = [0]*len(y)
+    stdFilter = [0]*len(y)
+    avgFilter[lag - 1] = np.mean(y[0:lag])
+    stdFilter[lag - 1] = np.std(y[0:lag])
+    for i in range(lag, len(y)):
+        if abs(y[i] - avgFilter[i-1]) > threshold * stdFilter [i-1]:
+            if y[i] > avgFilter[i-1]:
+                signals[i] = 1
+            else:
+                signals[i] = -1
+
+            filteredY[i] = influence * y[i] + (1 - influence) * filteredY[i-1]
+            avgFilter[i] = np.mean(filteredY[(i-lag+1):i+1])
+            stdFilter[i] = np.std(filteredY[(i-lag+1):i+1])
+        else:
+            signals[i] = 0
+            filteredY[i] = y[i]
+            avgFilter[i] = np.mean(filteredY[(i-lag+1):i+1])
+            stdFilter[i] = np.std(filteredY[(i-lag+1):i+1])
+
+    return dict(signals = np.asarray(signals),
+                avgFilter = np.asarray(avgFilter),
+                stdFilter = np.asarray(stdFilter))
 
 # %%
 def z_score_peak_detection_2D(time_series : np.array, lag : int, threshold : float, influence : float):
@@ -293,7 +350,7 @@ def z_score_peak_detection_2D(time_series : np.array, lag : int, threshold : flo
 
     for i in range(lag, time_series.shape[1]):
         #shift window to the left
-        np.roll(filtered_time_series_window, -1, axis = 1)
+        filtered_time_series_window = np.roll(filtered_time_series_window, -1, axis = 1)
         #if the series value minus the current mean is larger then the threshold times the current std
         for j in range(time_series.shape[0]):
             if abs(time_series[j][i] - lag_window_mean[j]) > threshold * lag_window_std[j]:
