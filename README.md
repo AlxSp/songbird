@@ -122,3 +122,13 @@ sample_dict = {
 current main sample gbif_id:
 
 2243804495
+
+
+
+
+
+
+
+
+Possbile Main Candidates:  
+red crossbill,loxia curvirostra,9629160
