@@ -6,6 +6,7 @@ xeno_canto_bsfatw/
 #Ignore generated datset files and directories
 data_dictionary/
 dataset/
+audio_event_plots/
 #Jupyter notebooks
 #ignoring new changes to this notebook
 audio_sample_analysis.ipynb 
