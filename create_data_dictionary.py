@@ -181,7 +181,7 @@ if os.path.exists(data_dictionary_path):
         except Exception as e:
             print('Failed to delete {}. Exceptions: {}'.format(file_path, e)) 
 else:
-    os.mkdir(data_dictionary_path)
+    os.makedirs(data_dictionary_path)
 
 samples_metadata_path = os.path.join(data_dictionary_path, 'samples_metadata.json')
 samples_per_species = occurrence_df.groupby(['speciesKey']) #group samples of each species
