@@ -184,6 +184,45 @@ def add_sample_ids_to_download_species_sample_info(download_species_sample_info 
 
     return download_species_sample_info
 
+def get_sample_ids_from_txt(file_path):
+    sample_ids  = []    # empty sample ids array
+    with open(file_path) as f:  # open file
+        text_file_data = f.readlines()  #read all lines in file
+        for line in text_file_data: # for each line
+            split_values = line.replace(" ","").rstrip('\n').split(',') # remove whitespaces, new line characters and split line by commas into separate sample ids
+            sample_ids += split_values  # append split samples ids
+
+    return sample_ids
+
+def get_sample_ids_from_csv(file_path):
+    return pd.read_csv(file_path)['sample_id'].to_list() # read csv file with pandas (expecting a header)
+
+def get_sample_ids_from_downloaded_samples_json(file_path):
+    sample_ids  = []    # empty sample ids array
+    with open(file_path) as f:
+        downloaded_samples = json.load(f) #load samples dictionary
+    species_samples_list = [samples["forefront_sample_ids"] + samples["background_sample_ids"] for key, samples in downloaded_samples.items()]
+    for species_samples in species_samples_list:
+        sample_ids += species_samples
+    return sample_ids
+
+def get_sample_ids_from_file(file_path):
+    if not os.path.isfile(file_path):
+        raise Exception(f'file at given path "{file_path}" does not exist!')
+
+    string_sample_ids = []
+    filename, file_extension = os.path.splitext(file_path)
+    if file_extension == ".txt":
+        string_sample_ids = get_sample_ids_from_txt(file_path)
+    elif file_extension == ".csv":
+        string_sample_ids = get_sample_ids_from_csv(file_path)
+    elif file_extension == ".json":
+        string_sample_ids = get_sample_ids_from_downloaded_samples_json(file_path)
+
+    return [int(sample_id) for sample_id in string_sample_ids]
+
+def booleanInput():
+    pass
 
 def empty_or_create_dir(dir_path):
     '''
@@ -206,130 +245,151 @@ dataset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dataset
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Download mp3 samples from species described int the data_dictionary directory')
-    parser.add_argument('--sample_min', type=int, required=False, default=0,
-                            help =  'set the minimum forefront sample amount a species should have')
-    parser.add_argument('--include_background_samples', required=False, action='store_true', 
-                            help =  'if this argument is set, background samples are included in the \
-                                    sample min argument and will be downloaded after all forefront samples (if download max has not been reached)')
-    parser.add_argument('--download_max', type=int, required=False, default=None,
-                            help =  'set the maximum samples that should be downloaded for each species')
+    parser.add_argument('--all', required=False, action='store_true', 
+                            help =  'if this argument is set, all species and their samples will be downloaded')
+
     parser.add_argument('--exclude_unknown_species', required=False, action='store_true',
-                            help =  'If this argument is set, unknown species, with species key 0, will be excluded from the download')
-    parser.add_argument('--include_species_keys', type=int, required=False, default=[], nargs='+', 
+                            help =  'If this argument is set, unknown species, with species key 0, will be excluded from being download. \
+                                    This argument is only expected when the --all argument is given')
+    parser.add_argument('--species_sample_min', type=int, required=False, default=0,
+                            help =  'set the minimum forefront sample amount a species should have. \
+                                    This argument is only expected when the --all argument is given')
+
+    parser.add_argument('--get_species_keys', type=int, required=False, default=[], nargs='+', 
                             help =  'Add keys of specific species which samples should be downloaded. \
                                     If this argument is given only samples for these species will be downloaded.')
-    parser.add_argument('--include_sample_ids', type=int, required=False, default=[], nargs='+', 
+
+    parser.add_argument('--include_background_samples', required=False, action='store_true', 
+                            help =  'if this argument is set, background samples are included in the \
+                                    species samples and sample min argument and will be downloaded after all forefront samples (if download max has not been reached) \
+                                    This argument is only expected when the --all or --get_species_keys argument is given')
+    parser.add_argument('--species_sample_max', type=int, required=False, default=None,
+                            help =  'set the maximum samples that should be downloaded for each species \
+                                    This argument is only expected when the --all or --get_species_keys argument is given')
+
+    parser.add_argument('--get_sample_ids', type=int, required=False, default=[], nargs='+', 
                             help =  'Add ids of specific samples which should be downloaded. If this \
                                     argument is given only these samples will be downloaded.')
+    parser.add_argument('--get_sample_ids_from_file', type=str, required=False, 
+                            help =  'Give a path to a txt, download_species_sample_info.json or csv file which specifies sample ids which should be downloaded. \
+                                     If a csv file is given the header of sample id column has to be named "sample_id"')
+    
     parser.add_argument('--reset_download_dir', required=False, action='store_true',
                             help =  'If this argument is given, the **dataset/raw/** directory will be \
                                     completely emptied before samples are downloaded')
     args = parser.parse_args()
 
-    #load data dictionary
+    #create paths to meta and info files
     data_dictionary_path = os.path.join(dataset_path, 'data_dictionary')
     species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
     species_sample_info_file_path = os.path.join(data_dictionary_path, 'species_sample_info.json')
     samples_metadata_file_path = os.path.join(data_dictionary_path, 'samples_metadata.json')
-
     download_species_sample_info_file_path = os.path.join(data_dictionary_path, 'download_species_sample_info.json')
 
 
     species_info_df = pd.read_csv(species_info_path)
-    #load species sample info
+    #load species sample info, which describes in what samples the species appear 
     with open(species_sample_info_file_path) as f:
         species_sample_info_dict = {int(species_key): info for species_key, info in json.load(f).items()} 
-    #load samples metadata
+    #load samples metadata, which holds general information on each sample
     with open(samples_metadata_file_path) as f:
-        samples_metadata_dict = {int(species_key): info for species_key, info in json.load(f).items()} #json.load(f)
+        samples_metadata_dict = {int(species_key): info for species_key, info in json.load(f).items()}
 
-    #check command line arguments
+    downloaded_sample_ids = []          # list of downloaded sample ids
+    download_species_sample_info = {}   # dictionary of downloaded species and their samples
 
     raw_data_path = os.path.join(dataset_path, 'raw')
-    #if reset_download_dir is given delete all samples in dir
-    if not os.path.isdir(raw_data_path): #check if raw direcotry exists in dataset/
-        print("Creating '{}' directory for downloads.".format(raw_data_path))
-        empty_or_create_dir(raw_data_path)
-        downloaded_sample_ids = []          
-        download_species_sample_info = {}
-    else:
-        if args.reset_download_dir:
+    if os.path.isdir(raw_data_path): #if dataset/raw does exist
+        if args.reset_download_dir:  #if reset download dir is given, delete all samples in dir
             print("Reseting '{}' dir".format(raw_data_path))
             empty_or_create_dir(raw_data_path)
-            downloaded_sample_ids = []
-            download_species_sample_info = {}
         else:   #load already downloaded samples and load or create download_species_sample_info
             downloaded_sample_ids = get_downloaded_sample_ids(raw_data_path) #get ids of samples that have already been downloaded
-            if not os.path.exists(download_species_sample_info_file_path):
+            if not os.path.exists(download_species_sample_info_file_path):  # if download sample info file does not exist
+                #create the downloaded sample dictionary from the samples in the raw directory
                 download_species_sample_info = generate_download_species_sample_info(downloaded_sample_ids, samples_metadata_dict, download_species_sample_info_file_path)
-            else: 
+            else:   # create a dictionary from the download species sample info
                 with open(download_species_sample_info_file_path) as f:
                     download_species_sample_info = {int(species_key): info for species_key, info in json.load(f).items()}
-    #make sure only one of the two options is given
-    if args.include_species_keys and args.include_sample_ids:
-        raise Exception('Both include_species_keys and include_sample_ids were given! Please only give one or the other!')
+    else:   # if dataset does not exist, create it
+        print("Creating '{}' directory for downloads.".format(raw_data_path))
+        empty_or_create_dir(raw_data_path)
+        
+    if (args.get_species_keys and args.get_sample_ids) or (args.all and args.get_species_keys) or (args.all and args.get_sample_ids):   #make sure only one of the two options is given
+        raise Exception('Please choose only one of get_species_keys, get_sample_ids, or all! For more info execute the script with the -h command.')
 
-    if args.include_species_keys:
-        #check if all given keys are in the dictionary
-        species_key_list = species_info_df['species_key'].tolist()
-        keys_not_found_arr = [key for key in args.include_species_keys if key not in species_key_list]
+    sample_ids_to_download = []
 
-        #print(species_info_df[species_info_df['species_key'] == 2473663])
-        if keys_not_found_arr: 
-            print('WARNING! Some given species keys were not found in the data dictionary: {}'.format(keys_not_found_arr))
-            bool_input = input('Would you like to continue? (y/n)')[0].lower()
-            if bool_input == 'y':
-                pass
+    if args.all or args.get_species_keys:
+        if args.all:
+            #exclude_unknown_species is given drop species with specie_key = 0
+            if args.exclude_unknown_species:
+                unknown_species_index = species_info_df[species_info_df['species_key'] == 0].index
+                species_info_df.drop(unknown_species_index, inplace = True)
+            #if include_background_samples is given include background samples in sample minimum
+            if args.include_background_samples:
+                not_meeting_requirements_indices = species_info_df[species_info_df['forefront_recordings'] + species_info_df['background_recordings'] < args.species_sample_min].index
             else:
-                print("Quiting script")
-                quit()
-        # remove all species rows which are not in args.include_species_keys
-        species_indices = species_info_df[~species_info_df['species_key'].isin(args.include_species_keys)].index
-        species_info_df.drop(species_indices, inplace = True)
+                not_meeting_requirements_indices = species_info_df[species_info_df['forefront_recordings'] < args.species_sample_min].index
 
-    elif args.include_sample_ids:
-        pass
-    else:
-        #exclude_unknown_species is given drop species with specie_key = 0
-        if args.exclude_unknown_species:
-            unknown_species_index = species_info_df[species_info_df['species_key'] == 0].index
-            species_info_df.drop(unknown_species_index, inplace = True)
-        #if include_background_samples is given include background samples in sample minimum
-        if args.include_background_samples:
-            not_meeting_requirements_indices = species_info_df[species_info_df['forefront_recordings'] + species_info_df['background_recordings'] < args.sample_min].index
-        else:
-            not_meeting_requirements_indices = species_info_df[species_info_df['forefront_recordings'] < args.sample_min].index
-        species_info_df.drop(not_meeting_requirements_indices, inplace = True)
+            species_info_df.drop(not_meeting_requirements_indices, inplace = True)
 
-        print("{} species have more than {} samples".format(len(species_info_df), args.sample_min))
+            print("{} species have more than {} samples".format(len(species_info_df), args.species_sample_min))
 
-    if not args.include_sample_ids:
+        elif args.get_species_keys:
+            species_key_list = species_info_df['species_key'].tolist()
+            keys_not_found_arr = [key for key in args.get_species_keys if key not in species_key_list]
+
+            #if some keys were not found; print them out and ask if the user wishes to continue
+            if keys_not_found_arr: 
+                print('WARNING! Some given species keys were not found in the data dictionary: {}'.format(keys_not_found_arr))
+                bool_input = input('Would you like to continue with the known species keys? (y/n)')[0].lower()
+                if bool_input == 'y':
+                    pass
+                else:
+                    print("Quiting script")
+                    quit()
+            # remove all species rows which are not in args.get_species_keys
+            species_indices = species_info_df[~species_info_df['species_key'].isin(args.get_species_keys)].index
+            species_info_df.drop(species_indices, inplace = True)
+
+        # create list of species keys that fit user requirements
         species_keys = species_info_df['species_key'].tolist()
-        if not species_keys:
+        if not species_keys:    #check if the list is not empty
             print("No species met the given requirements. Ending script")
             quit()
         #filter samples info to only relevant samples
         species_sample_data = get_species_sample_ids(species_sample_info_dict, species_keys)
-        species_sample_ids, sample_ids_to_download = filter_species_samples(species_sample_data, args.include_background_samples, args.download_max, downloaded_sample_ids)
+
+        species_sample_ids, sample_ids_to_download = filter_species_samples(species_sample_data, args.include_background_samples, args.species_sample_max, downloaded_sample_ids)
         add_species_samples_to_download_species_sample_info(download_species_sample_info, species_sample_ids)
-    else:
-        #check if all given sample ids are in the sample metadata dictionary
-        sample_ids_not_found_arr = [s_id for s_id in args.include_sample_ids if s_id not in samples_metadata_dict]
+    
+    elif args.get_sample_ids_from_file or args.get_sample_ids:
+
+        if args.get_sample_ids_from_file:   #if the user provided a file, get the samples ids from the file
+            input_sample_ids = get_sample_ids_from_file(args.get_sample_ids_from_file)
+        elif args.get_sample_ids: # else get the sample ids as a list from the user argument
+            input_sample_ids = args.get_sample_ids
+
+        sample_ids_not_found_arr = [s_id for s_id in input_sample_ids if s_id not in samples_metadata_dict]
         if sample_ids_not_found_arr: 
             print('WARNING! Some given sample ids were not found in the data dictionary: {}'.format(sample_ids_not_found_arr))
-            bool_input = input('Would you like to continue? (y/n)')[0].lower()
+            bool_input = input('Would you like to continue with the known sample ids? (y/n)')[0].lower()
             if bool_input == 'y':
                 pass
             else:
                 print("Quiting script")
                 quit()
 
-        found_species_sample_ids = [s_id for s_id in args.include_sample_ids if s_id in samples_metadata_dict]
+        found_species_sample_ids = [s_id for s_id in input_sample_ids if s_id in samples_metadata_dict]
 
         sample_ids_to_download = set(found_species_sample_ids)
         #remove samples that have already been dowloaded
         sample_ids_to_download = list(sample_ids_to_download.difference(downloaded_sample_ids))
         add_sample_ids_to_download_species_sample_info(download_species_sample_info, sample_ids_to_download, samples_metadata_dict)
+
+    else:
+        raise Exception('Please choose only one of get_species_keys, get_sample_ids, or all! For more info execute the script with the -h command.')
 
     print("A total of {} new samples will be downloaded".format(len(sample_ids_to_download)))
 
