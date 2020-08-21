@@ -32,29 +32,43 @@
     Reads the data dictionary (**dataset/data_dictionary/**) and downloads files in the mp3 format to the **dataset/raw/** directory. It will not download a sample if it is already present in the **dataset/raw/** directory. Creates a download_species_sample_info.json file in the **dataset/data_dictionary/** directory which stores information on downloaded samples and their relation to the species
 
     **Arguments:**
-    * **sample_min <int_value>**
+    
+    * **all**
 
-        set the minimum forefront sample amount a species should have
-
-    * **include_background_samples**
-
-        If this argument is given, background samples are included in the sample min argument and will be downloaded after all forefront samples (if download max has not been reached)
-
-    * **download_max <int_value>**
-
-        set the maximum samples that should be downloaded for each species
+        set if all available samples should be downloaded 
 
     * **exclude_unknown_species**
 
-        If this argument is set, unknown species, with species key 0, will be excluded from the download
+        If this argument is set, unknown species, with species key 0, will be excluded from the download. This argument is only valid when the --all argument is given
 
-    * **include_species_keys <int_value 0> ... <int_value n>**
+    * **species_sample_min <int_value>**
+
+        set the minimum forefront sample amount a species should have. This argument is only valid when the --all argument is given
+
+    * **use_species_keys <int_value 0> ... <int_value n>**
 
         Add keys of specific species which samples should be downloaded. If this argument is given only samples for these species will be downloaded.
 
-    * **include_sample_ids <int_value 0> ... <int_value n>**
+    * **include_background_samples**
+
+        If this argument is given, background samples are included in the sample min argument and will be downloaded after all forefront samples (if download max has not been reached). This argument is only valid when the --all or --use_species_keys argument is given
+
+    * **species_sample_max <int_value>**
+
+        set the maximum samples that should be downloaded for each species. This argument is only valid when the --all or --use_species_keys argument is given
+
+    * **use_sample_ids <int_value 0> ... <int_value n>**
 
         Add ids of specific samples which should be downloaded. If this argument is given only these samples will be downloaded.
+
+    * **use_sample_ids_from_file <int_value 0> ... <int_value n>**
+
+        Give a path to a txt, download_species_sample_info.json or csv file which specifies the sample ids which should be downloaded. If a csv file is given the header of the sample id column has to be named "sample_id"
+
+    * **sample_length_max <int_value>**
+
+        set the maximum sample length in sec that a sample should have to be downloaded
+        This argument is valid with --all, --use_species_keys, --use_sample_ids, and use --use_sample_ids_from_file argument is given
 
     * **reset_download_dir**
 
