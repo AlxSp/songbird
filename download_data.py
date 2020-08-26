@@ -228,7 +228,7 @@ def filter_sample_ids_by_length(sample_ids, max_sample_length, samples_metadata_
     Filters the given samples if they are equal or below the max_sample_length parameter
     """
     before_len = len(sample_ids)
-    filtered_sample_ids = [sample_id for sample_id in sample_ids if samples_metadata[sample_id].get('recording_link', sys.maxsize) <= max_sample_length]
+    filtered_sample_ids = [sample_id for sample_id in sample_ids if samples_metadata_dict[sample_id].get('recording_link', sys.maxsize) <= max_sample_length]
     after_len = len(filtered_sample_ids)
     print(f"Filtered {before_len - after_len} samples that exceed the max_sample_length; {max_sample_length} second")
     return filtered_sample_ids
