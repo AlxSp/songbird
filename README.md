@@ -73,7 +73,30 @@
     * **reset_download_dir**
 
         If this argument is given, the **dataset/raw/** directory will be completely emptied before samples are downloaded
+
+* ### generate_audio_events.py
+
+    Processes audio files and extracts the detected audio events in csv format. Also allows generation of plots for debugging.
+
+    **Arguments:**
     
+    * **all_samples**
+
+        set if all available samples should be processed for audio event detection.  
+
+    * **sample_ids <int_value 0> ... <int_value n>**
+
+        Add ids of specific samples which should be processed.    
+    
+    * **generate_process_plots**
+
+        set if plots of audio detection should be created (this feature is mainly useful for debugging). Plots will be stored in the **audio_event_plots/** directory.
+
+    * **multi_processing <?int_value>**
+
+        set to use multiple cores for the processing of audio files. The parameter expects a following integer value specifying the number of cores that should be used; if only **--multi_processing** is given all available cores will be used.
+
+
 ## Jupyter Notebooks
 
 * ### audio_sample_analysis.ipynb

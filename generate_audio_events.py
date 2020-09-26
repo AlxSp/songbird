@@ -15,7 +15,10 @@ import os
 import csv
 import shutil
 import hdbscan
+import multiprocessing
 
+import warnings
+warnings.filterwarnings('ignore') #filter warnings to suppress; warnings.warn("PySoundFile failed. Trying audioread instead.")
 
 main_sample_rate = 44100 # 44.1 kHz
 ##Spectogram variables
@@ -291,7 +294,6 @@ def get_audio_event_scopes_from_hdbscan(peak_coordinates, save_process_step_plot
     clusters_coordinates = [[] for i in range(len(set(clusterer.labels_)) - 1)]
 
     if save_process_step_plots: 
-
         def adjust_alpha(color, alpha):
             color[-1] = alpha
             return color
@@ -305,7 +307,7 @@ def get_audio_event_scopes_from_hdbscan(peak_coordinates, save_process_step_plot
         f = plt.figure(figsize=(10,5), dpi = 80)
         ax = f.add_subplot()
         ax.set_title(f"HDBScan number of clusters: {(len(set(clusterer.labels_)) - 1)}") #set title 
-        ax.set_facecolor('silver')
+        ax.set_facecolor('black')
         ax.scatter(peak_coordinates[:,1], peak_coordinates[:,0], s=2, linewidth=0, c=colors_with_probs)
 
         plt.tight_layout()
@@ -393,6 +395,9 @@ def save_spectogram_plot(spectogram_matrix, sample_rate, step_size, sample_id, t
     #plt.show()
 
 def create_audio_events_from_sample(sample_id, save_process_step_plots = False):
+    if save_process_step_plots:
+        empty_or_create_dir(os.path.join(plots_path, str(sample_id)))
+        
     #load sample as time series array
     sample, _ = load_audio_sample(sample_id)
     #create time series frames
@@ -451,12 +456,15 @@ if __name__ == '__main__':
                             help =  'Give a path to a txt file which specifies sample ids which should be processed.')
     parser.add_argument('--generate_process_plots', required=False, action='store_true',
                             help =  'If this argument is set, processing steps will be visualized and saved to audio_event_plots (for testing)')
-    parser.add_argument('--multi_processing', type=int, required=False, 
-                            help =  'Specify by id which samples should be processed.')
+    parser.add_argument('--multi_processing', type=int, required=False, nargs='?', const=os.cpu_count(),
+                            help =  'Specify number of cores that should be used')
     args = parser.parse_args()
 
     if not os.path.exists(audio_events_dir):
         os.mkdir(audio_events_dir)
+
+    if args.generate_process_plots:
+        empty_or_create_dir(plots_path)
 
     if args.all_samples:
         sample_id_arr = get_all_samples_ids(raw_sample_dir)
@@ -466,8 +474,13 @@ if __name__ == '__main__':
         print("Feature is note yet implemented")
     else: 
         raise Exception("Please provide samples through '--sample_ids', '--sample_ids_from_file', or '--all_samples'")
-
-    for sample_id in sample_id_arr:
-        create_audio_events_from_sample(sample_id, args.generate_process_plots)
+    
+    if args.multi_processing:
+        print(f"Using {args.multi_processing} cores for multi processing!")
+        with multiprocessing.Pool(processes=args.multi_processing) as pool:
+            pool.starmap(create_audio_events_from_sample, [(sample_id, args.generate_process_plots) for sample_id in sample_id_arr])
+    else:
+        for sample_id in sample_id_arr:
+            create_audio_events_from_sample(sample_id, args.generate_process_plots)
 
 
