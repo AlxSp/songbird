@@ -4,3 +4,5 @@ librosa
 matplotlib
 numpy
 hdbscan
+pandas
+jupyter

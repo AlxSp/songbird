@@ -16,9 +16,13 @@ import csv
 import shutil
 import hdbscan
 import multiprocessing
+from collections import namedtuple
 
 import warnings
 warnings.filterwarnings('ignore') #filter warnings to suppress; warnings.warn("PySoundFile failed. Trying audioread instead.")
+
+
+#Variables for audio detection
 
 main_sample_rate = 44100 # 44.1 kHz
 ##Spectogram variables
@@ -49,6 +53,17 @@ event_length_min = int(0.125 * main_sample_rate) # 125ms * sample rate will give
 start_buffer_len = int(.5 * main_sample_rate)
 end_buffer_len = int(.5 * main_sample_rate)
 
+AudioConversionParameters = namedtuple('AudioConversionParameters', ['main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
+EventDetectionParameters = namedtuple('EventDetectionParameters', ['mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
+ClusteringParameters = namedtuple('ClusteringParameters', ['min_cluster_size'])
+EventProcessingParameters = namedtuple('EventProcessingParameters', ['event_distance_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
+AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plots')
+
+audio_conversion_parameters = AudioConversionParameters(main_sample_rate, window_size, step_size, max_frequency, min_frequency)
+event_detection_parameters = EventDetectionParameters(mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
+clustering_parameters = ClusteringParameters(min_cluster_size)
+event_processing_parameters = EventProcessingParameters(event_distance_max, event_length_min, start_buffer_len, end_buffer_len)
+
 ######################################################################################################################
 ######################################################################################################################
 species_info_df = None # dict with species info
@@ -59,7 +74,7 @@ raw_sample_dir = os.path.join(file_dir, 'dataset', 'raw') #path pointing to samp
 #processed_sample_dir = os.path.join(file_dir, 'dataset', 'processed') #path pointing to samples
 audio_events_dir = os.path.join(file_dir, 'dataset', 'audio_events') #path pointing to samples
 samples_metadata_file_path = os.path.join(file_dir, 'dataset', 'data_dictionary', 'samples_metadata.json')
-
+download_species_sample_path = os.path.join(file_dir, 'dataset', 'data_dictionary', 'download_species_sample_info.json')
 plots_path = os.path.join(file_dir, 'audio_event_plots')
 
 ######################################################################################################################
@@ -81,6 +96,12 @@ def empty_or_create_dir(dir_path):
                 print('Failed to delete {}. Exceptions: {}'.format(file_path, e)) 
     else:
         os.mkdir(dir_path)
+
+
+def get_all_samples_ids(dir_path):
+    return [os.path.splitext(f)[0] for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
+    #sample_ids = [f for f in listdir(raw_sample_dir) if isfile(join(raw_sample_dir, f))]
+    #return sample_ids
 
 ###############################################
 #TO BE REMOVED
@@ -143,7 +164,7 @@ def display_sample_metadata(sample_id):
 #TO BE REMOVED
 ###############################################
 
-def load_audio_sample(sample_id):
+def load_audio_sample(sample_id, main_sample_rate):
     '''
     loads an audio sample by it's id (file name). Returns the audio and the the sample rate
     '''
@@ -290,6 +311,9 @@ def get_cluster_scope(cluster_coordinates):
     return np.min(cluster_coordinates[:,1]), np.max(cluster_coordinates[:,1]), np.min(cluster_coordinates[:,0]), np.max(cluster_coordinates[:,0])
 
 def get_audio_event_scopes_from_hdbscan(peak_coordinates, save_process_step_plots = False, sample_id = None):
+
+    #change function to not save plot, saving the plot should be done externally
+
     clusterer = hdbscan.HDBSCAN(min_cluster_size = min_cluster_size).fit(peak_coordinates)
     clusters_coordinates = [[] for i in range(len(set(clusterer.labels_)) - 1)]
 
@@ -394,12 +418,7 @@ def save_spectogram_plot(spectogram_matrix, sample_rate, step_size, sample_id, t
     plt.savefig(os.path.join(plots_path, str(sample_id), title + '.png'))
     #plt.show()
 
-def create_audio_events_from_sample(sample_id, save_process_step_plots = False):
-    if save_process_step_plots:
-        empty_or_create_dir(os.path.join(plots_path, str(sample_id)))
-        
-    #load sample as time series array
-    sample, _ = load_audio_sample(sample_id)
+def create_spectogram(sample, window_size, step_size, main_sample_rate):
     #create time series frames
     time_series_frames = get_even_time_series_frames(sample, window_size, step_size)
     #apply taper function to each frame
@@ -410,40 +429,91 @@ def create_audio_events_from_sample(sample_id, save_process_step_plots = False):
     rfft_bin_freq = get_frequency_bins(window_size, main_sample_rate)
     #convert power spectogram to decibel units
     db_frames = librosa.power_to_db(power_frames, ref=np.max)
-    #trim the spectogram to a specified frequency range
-    db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, max_frequency, min_frequency)
-    #transpose spectogram [frames, frequencies] -> [frequencies, frames]
-    T_db_frames = np.array(db_frames).T
 
-    if save_process_step_plots:
-        #save the decibel spectogram
-        save_spectogram_plot(T_db_frames, main_sample_rate, step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+    return db_frames, rfft_bin_freq
 
-    #detect peaks in spectogram
-    peaks = auxiliary_z_score_peak_detection_2D(T_db_frames, mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
+def process_spectogram(db_frames):
+    #test #######
+    relevant_freq_range = 21 #always use uneven number
+    time_dim = db_frames.shape[0]
+    freq_dim = db_frames.shape[1]
+    freq_padding = int(relevant_freq_range/2)
+    accumulated_frames = np.zeros((time_dim, freq_dim - freq_padding * 2))
+
+    for time_index in range(time_dim):
+        for freq_index in range(freq_padding, freq_dim - freq_padding):
+            accumulated_frames[time_index][freq_index - freq_padding] = np.median(db_frames[time_index][freq_index - freq_padding : freq_index + freq_padding])
+    #test #######
+
+    return accumulated_frames
+
+def detect_events_in_spectogram(spectrogram, event_detection_parameters):
+    spectogram_peaks = auxiliary_z_score_peak_detection_2D(spectrogram, event_detection_parameters.mean_lag_window_size, event_detection_parameters.std_lag_window_size, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
     #remove negative peaks
-    clipped_peaks = np.clip(peaks, 0, 1)
+    return np.clip(spectogram_peaks, 0, 1)
 
-    if save_process_step_plots:
-        #save_spectogram_peaks()
-        save_spectogram_plot(clipped_peaks, main_sample_rate, step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
-
+def cluster_audio_events(spectogram_peaks):
     #get peak coordinates
-    peak_coordinates = np.array(np.where(clipped_peaks == 1)).T
+    peak_coordinates = np.array(np.where(spectogram_peaks == 1)).T
     #group single peaks into audio events
-    audio_event_index_scopes = get_audio_event_scopes_from_hdbscan(peak_coordinates, save_process_step_plots, sample_id)
+    audio_event_index_scopes = get_audio_event_scopes_from_hdbscan(peak_coordinates, additional_parameters.generate_process_plots, sample_id)
     #sort audio events by their occurrence 
     audio_event_index_scopes = sorted(audio_event_index_scopes, key = lambda x: x[1])
     #process audio events
-    audio_event_index_scopes = concatenate_events(audio_event_index_scopes, 0)
+    return concatenate_events(audio_event_index_scopes, 0)
 
-    if save_process_step_plots:
-        save_spectogram_plot(T_db_frames, main_sample_rate, step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
-    #convert audio event index scopes to audio events with time and frequency scopes
-    audio_events = index_scopes_to_unit_scopes(audio_event_index_scopes, main_sample_rate, step_size, rfft_bin_freq)
-    #save events
+def create_audio_events_from_sample(process_function, sample_id, 
+    audio_conversion_parameters, 
+    event_detection_parameters, 
+    clustering_parameters, 
+    event_processing_parameters, 
+    additional_parameters,
+     ):
+
+    if additional_parameters.generate_process_plots:
+        empty_or_create_dir(os.path.join(plots_path, str(sample_id)))
+
+    audio_events = process_function(sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
+
     audio_events_to_csv(audio_events, sample_id)
-    
+
+def create_audio_events_with_zscore(
+    sample_id, 
+    audio_conversion_parameters, 
+    event_detection_parameters, 
+    clustering_parameters, 
+    event_processing_parameters, 
+    additional_parameters ):
+
+    #load sample as time series array
+    sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.main_sample_rate)
+
+    db_frames, rfft_bin_freq = create_spectogram(sample, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.main_sample_rate)
+    #trim the spectogram to a specified frequency range
+    db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
+
+    db_frames = process_spectogram(db_frames)    
+
+    transposed_db_spectogram = np.array(db_frames).T #transpose spectogram frames dimension from (time_step, frequency) to (frequency, time_step)
+
+    if additional_parameters.generate_process_plots:    #save the decibel spectogram
+        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+
+    #detect peaks in spectogram
+    spectogram_peaks = detect_events_in_spectogram(transposed_db_spectogram, event_detection_parameters)
+
+    if additional_parameters.generate_process_plots: #save_spectogram_peaks()
+        save_spectogram_plot(spectogram_peaks, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+
+    #accumulate individual audio peaks to sound events
+    audio_event_index_scopes = cluster_audio_events(spectogram_peaks)
+
+    if additional_parameters.generate_process_plots:
+        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
+    #convert audio event index scopes to audio events with time and frequency scopes
+    audio_events = index_scopes_to_unit_scopes(audio_event_index_scopes, audio_conversion_parameters.main_sample_rate, step_size, rfft_bin_freq)
+    #save events
+    return audio_events
 
 
 if __name__ == '__main__':
@@ -474,13 +544,15 @@ if __name__ == '__main__':
         print("Feature is note yet implemented")
     else: 
         raise Exception("Please provide samples through '--sample_ids', '--sample_ids_from_file', or '--all_samples'")
+
+    additional_parameters = AdditionalParameters(args.generate_process_plots)
     
     if args.multi_processing:
         print(f"Using {args.multi_processing} cores for multi processing!")
         with multiprocessing.Pool(processes=args.multi_processing) as pool:
-            pool.starmap(create_audio_events_from_sample, [(sample_id, args.generate_process_plots) for sample_id in sample_id_arr])
+            pool.starmap(create_audio_events_from_sample, [(create_audio_events_with_zscore, sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters) for sample_id in sample_id_arr])
     else:
         for sample_id in sample_id_arr:
-            create_audio_events_from_sample(sample_id, args.generate_process_plots)
+            create_audio_events_from_sample(create_audio_events_with_zscore, sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
 
 
