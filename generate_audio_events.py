@@ -100,69 +100,6 @@ def empty_or_create_dir(dir_path):
 
 def get_all_samples_ids(dir_path):
     return [os.path.splitext(f)[0] for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
-    #sample_ids = [f for f in listdir(raw_sample_dir) if isfile(join(raw_sample_dir, f))]
-    #return sample_ids
-
-###############################################
-#TO BE REMOVED
-def get_all_samples_dir(dir_path):
-    return [os.path.splitext(f)[0] for f in listdir(dir_path) if isfile(os.path.join(dir_path, f))]
-
-def get_sample_metadata():
-    '''
-    loads the file that holds information on the downloaded samples and the relevant species
-    '''
-    with open(samples_metadata_file_path) as f:
-        samples_metadata = json.load(f)
-    return samples_metadata
-
-def get_species_info():
-    '''
-    loads the file that holds information on all species
-    '''
-    return pd.read_csv(species_info_path).set_index('species_key')
-
-def display_sample_metadata(sample_id):
-    '''
-    displays the meta data + some additional info on the species in the sample. Takes the sample id as a parameter 
-    '''
-    samples_metadata = get_sample_metadata()
-
-    sample_info = samples_metadata.get(str(sample_id), None)
-    if sample_info is None:
-        raise Exception("sample with id '{}' was not found in sample_metadata".format(sample_id))
-    print('-' * 90)
-    print(f"Sample bgifID: {sample_info['gbifID']:>10}")
-    print(f"url: {sample_info['recording_link']}")
-    print(f"rec time (sec): {sample_info['recording_time_sec']}")
-    print(f"rec date: {sample_info['date']}")
-    print()
-    print(f"decimal latitude: {sample_info['decimal_latitude']}")
-    print(f"decimal longitude: {sample_info['decimal_longitude']}")
-    main_species_key = sample_info['forefront_bird_key']
-    print()
-    print(f"main species key: {main_species_key}".format())
-    print(f"main scientific name: {species_info_df.at[main_species_key, 'scientific_name']}")
-    print(f"main common name: {species_info_df.at[main_species_key, 'common_name']}")
-    print()
-    if sample_info['behavior']:
-        print("Noted behavior in this sample:")
-        for index, behavior in enumerate(sample_info['behavior']):
-            print(f"\t{str(index)+')'} {behavior}")
-    else:
-        print("Noted behavior in this sample: None")
-    if sample_info['background_birds_keys']:
-        print("Background bird's species keys and info:")
-        print(f"\t{'':3} {'key':^10} | {'scientific name':30} | {'common_name':30}")
-        print(f"\t{'-'*15:^15}┼{'-'*32:32}┼{'-'*30:30}")
-        for index, key in enumerate(sample_info['background_birds_keys']):
-            print(f"\t{str(index)+')':3} {key:10} | {species_info_df.at[key, 'scientific_name']:30} | {species_info_df.at[key, 'common_name']:30}")
-    else:
-        print("Background bird's species keys: None")
-    print('-' * 90)
-
-#TO BE REMOVED
-###############################################
 
 def load_audio_sample(sample_id, main_sample_rate):
     '''
@@ -177,46 +114,6 @@ def load_audio_sample(sample_id, main_sample_rate):
     time_series, _ = librosa.effects.trim(time_series)
 
     return time_series, sample_rate
-
-###############################################
-#TO BE REMOVED
-
-def show_amplitude_wave_plot(time_series, sample_rate):
-    '''
-    plots the amplitude vs time of the sample 
-    '''
-    fig, ax = plt.subplots(figsize=(10,5), dpi= 80)
-
-    ax.plot(time_series)
-
-    locator_num = 16 if len(time_series) // sample_rate >= 16 else len(time_series) // sample_rate
-    ax.set_xlim(left = 0, right = len(time_series))
-    ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
-    formatter = ticker.FuncFormatter(lambda ms, x: time.strftime('%-S', time.gmtime(ms // sample_rate)))
-    ax.xaxis.set_major_formatter(formatter)
-    ax.set_xlabel('Time (sec)')
-    ax.set_ylabel('Amplitude')
-    plt.show()
-
-def show_mel_spectogram(sample_time_series):
-    '''
-    plots the melspectogram of the sample
-    '''
-    S = librosa.feature.melspectrogram(y=sample_time_series, sr=main_sample_rate, n_mels=128, fmax=10000, center = False)
-    plt.figure(figsize=(10, 4))
-    S_dB = librosa.power_to_db(S, ref=np.max)
-    librosa.display.specshow(S_dB, x_axis='time',
-                            y_axis='mel', sr=main_sample_rate,
-                            fmax=10000)
-    plt.colorbar(format='%+2.0f dB')
-    plt.title('Mel-frequency spectrogram')
-    plt.tight_layout()
-    plt.show()
-
-
-#TO BE REMOVED
-###############################################
-
 
 ######################################################################################################################
 # Time Series to Spectogram ##########################################################################################
@@ -447,7 +344,7 @@ def process_spectogram(db_frames):
 
     return accumulated_frames
 
-def detect_events_in_spectogram(spectrogram, event_detection_parameters):
+def detect_peaks_in_spectogram(spectrogram, event_detection_parameters):
     spectogram_peaks = auxiliary_z_score_peak_detection_2D(spectrogram, event_detection_parameters.mean_lag_window_size, event_detection_parameters.std_lag_window_size, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
     #remove negative peaks
     return np.clip(spectogram_peaks, 0, 1)
@@ -500,7 +397,7 @@ def create_audio_events_with_zscore(
         save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
 
     #detect peaks in spectogram
-    spectogram_peaks = detect_events_in_spectogram(transposed_db_spectogram, event_detection_parameters)
+    spectogram_peaks = detect_peaks_in_spectogram(transposed_db_spectogram, event_detection_parameters)
 
     if additional_parameters.generate_process_plots: #save_spectogram_peaks()
         save_spectogram_plot(spectogram_peaks, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
