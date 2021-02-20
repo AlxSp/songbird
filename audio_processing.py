@@ -21,19 +21,23 @@ from collections import namedtuple
 import warnings
 warnings.filterwarnings('ignore') #filter warnings to suppress; warnings.warn("PySoundFile failed. Trying audioread instead.")
 
-TemplateAudioConversionParameters = namedtuple('AudioConversionParameters', ['fn_process_spectogram', 'main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
-TemplateEventDetectionParameters = namedtuple('EventDetectionParameters', ['fn_detect_peaks_in_spectogram', 'mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
-TemplateClusteringParameters = namedtuple('ClusteringParameters', ['fn_cluster_audio_events', 'min_cluster_size'])
-TemplateEventProcessingParameters = namedtuple('EventProcessingParameters', ['event_distance_max', 'event_freq_differnce_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
-AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plots')
-
-
-
 AudioConversionParameters = namedtuple('AudioConversionParameters', ['main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
 EventDetectionParameters = namedtuple('EventDetectionParameters', ['mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
 ClusteringParameters = namedtuple('ClusteringParameters', ['min_cluster_size'])
 EventProcessingParameters = namedtuple('EventProcessingParameters', ['event_distance_max', 'event_freq_differnce_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
 AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plots')
+
+def getZScoreParameters():
+    return AudioConversionParameters, EventDetectionParameters, ClusteringParameters, EventProcessingParameters, AdditionalParameters
+
+CustomAudioConversionParameters = namedtuple('AudioConversionParameters', ['fn_process_spectogram', 'main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
+CustomEventDetectionParameters = namedtuple('EventDetectionParameters', ['fn_detect_peaks_in_spectogram', 'mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
+CustomClusteringParameters = namedtuple('ClusteringParameters', ['fn_cluster_audio_events', 'min_cluster_size'])
+CustomEventProcessingParameters = namedtuple('EventProcessingParameters', ['event_distance_max', 'event_freq_differnce_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
+AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plots')
+
+def getCustomParameters():
+    return CustomAudioConversionParameters, CustomEventDetectionParameters, CustomClusteringParameters, CustomEventProcessingParameters, AdditionalParameters
 
 ######################################################################################################################
 ######################################################################################################################
@@ -364,7 +368,7 @@ def create_audio_events_from_sample( process_function,
 
     audio_events_to_csv(audio_events, sample_id)
 
-def create_audio_events_template(
+def create_audio_events_with_custom(
     sample_id, 
     audio_conversion_parameters, 
     event_detection_parameters, 
@@ -422,7 +426,7 @@ def create_audio_events_with_zscore(
     #trim the spectogram to a specified frequency range
     db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
 
-    db_frames = process_spectogram(db_frames)    
+    #db_frames = process_spectogram(db_frames)    
 
     transposed_db_spectogram = np.array(db_frames).T #transpose spectogram frames dimension from (time_step, frequency) to (frequency, time_step)
 

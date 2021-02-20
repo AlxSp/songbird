@@ -40,10 +40,13 @@ event_length_min = int(0.125 * main_sample_rate) # 125ms * sample rate will give
 start_buffer_len = int(.5 * main_sample_rate)
 end_buffer_len = int(.5 * main_sample_rate)
 
-audio_conversion_parameters = ap.AudioConversionParameters(main_sample_rate, window_size, step_size, max_frequency, min_frequency)
-event_detection_parameters = ap.EventDetectionParameters(mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
-clustering_parameters = ap.ClusteringParameters(min_cluster_size)
-event_processing_parameters = ap.EventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
+AudioConversionParameters, EventDetectionParameters, ClusteringParameters, EventProcessingParameters, AdditionalParameters = ap.getZScoreParameters()
+
 
 if __name__ == "__main__":
+    audio_conversion_parameters = AudioConversionParameters(main_sample_rate, window_size, step_size, max_frequency, min_frequency)
+    event_detection_parameters = EventDetectionParameters(mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
+    clustering_parameters = ClusteringParameters(min_cluster_size)
+    event_processing_parameters = EventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
+
     ap.main(audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, ap.create_audio_events_with_zscore)
