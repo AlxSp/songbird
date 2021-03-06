@@ -1,4 +1,5 @@
 #IDE and OS files and directories
+##__pycache__
 .vscode/
 .DS_Store
 #Ignore gbif-xeno-canto dataset info

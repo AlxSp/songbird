@@ -2,7 +2,7 @@
 
 
 ## Requirements 
-* Python 3.6+
+* Python 3.8+
 
 ### Modules:
 * requests
@@ -12,6 +12,14 @@
 * pandas
 
 ## Setup: 
+
+### Creating the environment 
+1. Create conda enviroment: 
+    ```
+    conda create songbird --file requirements.txt -c conda-forge
+    ```
+### Accessing and processing the data
+
 1. Download the dataset: [Xeno-canto - Bird sounds from around the world](https://www.gbif.org/dataset/b1047888-ae52-4179-9dd5-5448ea342a24#methodology)
 1. Extract it into the xeno_canto_bsfatw directory
 1. run create_data_dictionary.py
@@ -31,7 +39,7 @@
 
     Reads the data dictionary (**dataset/data_dictionary/**) and downloads files in the mp3 format to the **dataset/raw/** directory. It will not download a sample if it is already present in the **dataset/raw/** directory. Creates a download_species_sample_info.json file in the **dataset/data_dictionary/** directory which stores information on downloaded samples and their relation to the species
 
-    **Arguments:**
+    **CLI Arguments:**
     
     * **all**
 
@@ -78,7 +86,7 @@
 
     Processes audio files and extracts the detected audio events in csv format. Also allows generation of plots for debugging.
 
-    **Arguments:**
+    **CLI Arguments:**
     
     * **all_samples**
 
@@ -92,9 +100,79 @@
 
         set if plots of audio detection should be created (this feature is mainly useful for debugging). Plots will be stored in the **audio_event_plots/** directory.
 
-    * **multi_processing <?int_value>**
+    * **multi_processing <int_value (optional)>**
 
         set to use multiple cores for the processing of audio files. The parameter expects a following integer value specifying the number of cores that should be used; if only **--multi_processing** is given all available cores will be used.
+
+* ### audio_processing.py
+
+    holds the function for audio processing as well as pipelines. It's main purpose is to be imported and modified by another script, but it can be called with the same command line interface arguments as `generate_audio_events.py`. 
+
+    Main functions & arguments:
+
+        create_audio_events_with_zscore(
+        sample_id
+        audio_conversion_parameters, 
+        event_detection_parameters, 
+        clustering_parameters, 
+        event_processing_parameters, 
+        additional_parameters 
+        )
+
+    Custom function: 
+
+        create_audio_events_with_custom(
+        sample_id, 
+        audio_conversion_parameters, 
+        event_detection_parameters, 
+        clustering_parameters, 
+        event_processing_parameters, 
+        additional_parameters 
+        )
+
+    The main functions follow a format which makes it easy to adjust parameters or swap out entire functions:
+
+    audio_conversion: parameters to convert the audio from file to array and to a spectrogram
+    event_detection:  parameters to detect audio anomalies or peaks in the spectrogram
+    clustering: parameters to cluster the peaks into events
+    event_processing: parameters to convert the events into a standard format of start_time, end_time, max_frequency and min_frequency
+
+    ### Custom function pipeline:
+
+    #### 1. audio conversion function (`fn_process_spectogram(spectogram)`):
+        
+    > The purpose of this function is to further manipulate the spectogram before peaks are detected.
+        
+    Input:    
+    - a 2d array  which represents a spectogram. Input format is ( time_steps, frequency_bins ).
+    
+    Output: 
+    - a 2d array  which represents a spectogram. Output format is ( time_steps, frequency_bins ). 
+
+    #### 2. peak detection function (`fn_detect_peaks_in_spectogram(transposed_spectogram, event_detection_parameters)`):
+        
+    > The purpose of this function is to audio_events/peaks in the spectogram. While iterating over the spectogram when a peak is detected, it should be marked on an identically sized matrix with 1. It's best to create an identically sized matrix filled with 0s and then add the 1s.
+        
+    Input:    
+    - a 2d array  which represents a transposed spectogram. Input format is (frequency_bins, time_steps).
+    - additional parameters which are required inside of the function (set by user)
+
+    
+    Output: 
+    - a 2d array which represents detected peaks with 1s and non events with 0s. Output format is (frequency_bins, time_steps).
+    
+    ----
+
+    #### 3. peak clustering function (`fn_cluster_audio_events(spectogram_peaks, event_detection_parameters)`):
+        
+    > The purpose of this function is to cluster the peaks into "complete" events
+        
+    Input:    
+    - a 2d array which represents detected peaks with 1s and non events with 0s. Output format is (frequency_bins, time_steps).
+    - additional parameters which are required inside of the function (set by user)
+    
+    Output: 
+    - a 2d array  which represents a spectogram. Output format is (frequency_bins, time_steps). 
 
 
 ## Jupyter Notebooks
