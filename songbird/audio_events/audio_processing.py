@@ -21,6 +21,21 @@ from collections import namedtuple
 import warnings
 warnings.filterwarnings('ignore') #filter warnings to suppress; warnings.warn("PySoundFile failed. Trying audioread instead.")
 
+this_file_dir = os.path.dirname(os.path.abspath(__file__)) #absolute path to this file's directory
+project_base_dir = os.path.dirname(os.path.dirname(this_file_dir)) #path to base dir of project
+data_dir = os.path.join(project_base_dir, 'data')  #path to data_dir
+
+raw_sample_dir = os.path.join(data_dir, 'raw') #path pointing to samples
+audio_events_dir = os.path.join(data_dir, 'audio_events') #path pointing to samples
+samples_metadata_file_path = os.path.join(data_dir, 'data_dictionary', 'samples_metadata.json')
+download_species_sample_path = os.path.join(data_dir, 'data_dictionary', 'download_species_sample_info.json')
+plots_path = os.path.join(data_dir, 'audio_event_plots')
+
+
+######################################################################################################################
+######################################################################################################################
+
+
 AudioConversionParameters = namedtuple('AudioConversionParameters', ['main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
 EventDetectionParameters = namedtuple('EventDetectionParameters', ['mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
 ClusteringParameters = namedtuple('ClusteringParameters', ['min_cluster_size'])
@@ -39,20 +54,6 @@ AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plot
 
 def getCustomParameters():
     return CustomAudioConversionParameters, CustomAudioProcessingParameters, CustomEventDetectionParameters, CustomClusteringParameters, CustomEventProcessingParameters, AdditionalParameters
-
-######################################################################################################################
-######################################################################################################################
-species_info_df = None # dict with species info
-
-file_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-
-raw_sample_dir = os.path.join(file_dir, 'dataset', 'raw') #path pointing to samples
-audio_events_dir = os.path.join(file_dir, 'dataset', 'audio_events') #path pointing to samples
-samples_metadata_file_path = os.path.join(file_dir, 'dataset', 'data_dictionary', 'samples_metadata.json')
-download_species_sample_path = os.path.join(file_dir, 'dataset', 'data_dictionary', 'download_species_sample_info.json')
-plots_path = os.path.join(file_dir, 'audio_event_plots')
-
-######################################################################################################################
 
 ######################################################################################################################
 # Utility ############################################################################################################

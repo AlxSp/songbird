@@ -18,10 +18,18 @@
     ```
     conda create songbird --file requirements.txt -c conda-forge
     ```
+
+    or 
+
+    ```
+    conda env create -f environment.yml
+    ```
+
+
 ### Accessing and processing the data
 
 1. Download the dataset: [Xeno-canto - Bird sounds from around the world](https://www.gbif.org/dataset/b1047888-ae52-4179-9dd5-5448ea342a24#methodology)
-1. Extract it into the xeno_canto_bsfatw directory
+1. Extract it into the `data/xeno_canto_bsfatw` directory
 1. run create_data_dictionary.py
     - to check out info on the dataset run the meta_data_analysis.ipynb notebook
 1. run download_data.py (Currently downloads only 1 sample)
@@ -29,7 +37,9 @@
 
 ---
 
-## Scripts
+## Scripts in `songbird/`
+
+### data/
 
 * ### create_data_dictionary.py
     Processes files and information in the **xeno_canto_bsfatw/** directory (Setup steps 1 & 2) and creates a data dictionary in the **dataset/** directory. The created files are; 
@@ -81,6 +91,10 @@
     * **reset_download_dir**
 
         If this argument is given, the **dataset/raw/** directory will be completely emptied before samples are downloaded
+
+----
+
+### audio_events/
 
 * ### generate_audio_events.py
 
@@ -177,6 +191,8 @@
 
 ## Jupyter Notebooks
 
+notebooks/
+
 * ### audio_sample_analysis.ipynb
 
     Use this notebook to quickly checkout the wave plot and mel spectogram of downloaded samples.
@@ -184,20 +200,32 @@
 
 ## Project Structure:
 ```
-├──xeno_canto_bsfatw  
-│   ├── occurrence.txt  
-│   ├── ...
-│   └── multimedia.txt
-│
-├──dataset  
-│   ├──data_dictionary
-│   │   ├── species_info.csv
-│   │   ├── species_sample_info.json
-│   │   └── samples_metadata.json
-│   ├──raw
-│   └──processed
-├── scripts    
-└── jupyter notebooks
+
+
+├──data/
+│   ├──xeno_canto_bsfatw/  
+│   │   ├──occurrence.txt  
+│   │   ├──...
+│   │   └──multimedia.txt
+│   │
+│   ├──data_dictionary/
+│   │   ├──species_info.csv
+│   │   ├──species_sample_info.json
+│   │   └──samples_metadata.json
+│   │
+│   ├──raw/
+│   ├──processed/
+│   └──...
+│ 
+├──songbird/
+│   ├──data/ 
+│   │   ├── create_data_dictionary.py  
+│   │   └── download_data.py
+│   ├──audio_events/ 
+│   │   ├── create_data_dictionary.py  
+│   │   └── download_data.py
+│ 
+└── notebooks/
 ```
 
 Dictionary in samples_metadata.json

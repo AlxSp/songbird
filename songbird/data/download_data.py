@@ -7,7 +7,9 @@ import requests
 import shutil
 import sys
 
-dataset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dataset')  #global variable which holds the dataset path in the project
+this_file_dir = os.path.dirname(os.path.abspath(__file__)) #absolute path to this file's directory
+project_base_dir = os.path.dirname(os.path.dirname(this_file_dir)) #path to base dir of project
+data_dir = os.path.join(project_base_dir, 'data')  #path to data_dir
 
 class ProgressBar:
     def __init__(self, number_of_samples, bar_length = 50):
@@ -384,8 +386,8 @@ if __name__ == "__main__":
                                     completely emptied before samples are downloaded. And the download_species_sample_info.json file will be removed')
     args = parser.parse_args()
 
-    raw_data_path = os.path.join(dataset_path, 'raw') # global variable that holds the path to the raw downloads directory
-    data_dictionary_path = os.path.join(dataset_path, 'data_dictionary')
+    raw_data_path = os.path.join(data_dir, 'raw') # global variable that holds the path to the raw downloads directory
+    data_dictionary_path = os.path.join(data_dir, 'data_dictionary')
     species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
     samples_metadata_file_path = os.path.join(data_dictionary_path, 'samples_metadata.json')
     download_species_sample_info_file_path = os.path.join(data_dictionary_path, 'download_species_sample_info.json')

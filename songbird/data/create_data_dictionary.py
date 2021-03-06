@@ -125,101 +125,105 @@ def add_sample_dict(species_samples_dict, forefront_bird_key, gbif_id, decimal_l
     progress_bar.progress()
     progress_bar.print()
 
+if __name__ == "__main__":
 
-this_file_dir_path = os.path.dirname(os.path.abspath(__file__))
+    this_file_dir = os.path.dirname(os.path.abspath(__file__)) #get absolute path to this file's directory
 
-gbif_path = os.path.join(this_file_dir_path, 'xeno_canto_bsfatw') #absolute path to xeno canto meta data 
-#load relevant txt files as pandas dfs
-occurrence_df = pd.read_csv(os.path.join(gbif_path, 'occurrence.txt'), sep = '\t')
-multimedia_df = pd.read_csv(os.path.join(gbif_path, 'multimedia.txt'), sep = '\t')
+    project_base_dir = os.path.dirname(os.path.dirname(this_file_dir)) #get path to base dir of project
 
-#Check for columns with no values and delete them
-occurrence_columns_with_no_values = []
-for column in occurrence_df.columns:
-    if occurrence_df[column].isnull().all():
-        occurrence_columns_with_no_values.append(column)
-print("Dropping empty columns of occurrence_df")
-occurrence_df.drop(occurrence_columns_with_no_values, axis=1, inplace=True)
+    gbif_path = os.path.join(project_base_dir, 'data', 'xeno_canto_bsfatw') #absolute path to xeno canto meta data 
 
-#drop rows that do not reperesent audio files 
-image_link_indices = multimedia_df[multimedia_df['format'] != 'audio/mpeg'].index
-multimedia_df.drop(image_link_indices, inplace = True)
-#Check for columns with no values and delete them
-multimedia_columns_with_no_values = []
-for column in multimedia_df.columns:
-    if multimedia_df[column].isnull().all():
-        multimedia_columns_with_no_values.append(column)
-print("Dropping empty columns of multimedia_df")
-multimedia_df.drop(multimedia_columns_with_no_values, axis=1, inplace=True)
-#set df index to gbifID
-multimedia_df.set_index('gbifID', inplace = True)
+    data_dictionary_path = os.path.join(project_base_dir, 'data', 'data_dictionary')
+    #load relevant txt files as pandas dfs
+    occurrence_df = pd.read_csv(os.path.join(gbif_path, 'occurrence.txt'), sep = '\t')
+    multimedia_df = pd.read_csv(os.path.join(gbif_path, 'multimedia.txt'), sep = '\t')
 
-#Define all undefined species as unknown species
-occurrence_df['species'] = occurrence_df['species'].fillna('Unkown').str.lower()
-occurrence_df['vernacularName'] = occurrence_df['vernacularName'].fillna('Unkown').str.lower()
-occurrence_df['speciesKey'] = occurrence_df['speciesKey'].fillna(0).astype(int)
-occurrence_df['genusKey'] = occurrence_df['genusKey'].fillna(0).astype(int)
+    #Check for columns with no values and delete them
+    occurrence_columns_with_no_values = []
+    for column in occurrence_df.columns:
+        if occurrence_df[column].isnull().all():
+            occurrence_columns_with_no_values.append(column)
+    print("Dropping empty columns of occurrence_df")
+    occurrence_df.drop(occurrence_columns_with_no_values, axis=1, inplace=True)
 
-#speciesKey	species
-species_name_key_df = occurrence_df[['speciesKey', 'species']]
-species_to_key_dict = dict(zip(species_name_key_df['species'], species_name_key_df['speciesKey']))
+    #drop rows that do not reperesent audio files 
+    image_link_indices = multimedia_df[multimedia_df['format'] != 'audio/mpeg'].index
+    multimedia_df.drop(image_link_indices, inplace = True)
+    #Check for columns with no values and delete them
+    multimedia_columns_with_no_values = []
+    for column in multimedia_df.columns:
+        if multimedia_df[column].isnull().all():
+            multimedia_columns_with_no_values.append(column)
+    print("Dropping empty columns of multimedia_df")
+    multimedia_df.drop(multimedia_columns_with_no_values, axis=1, inplace=True)
+    #set df index to gbifID
+    multimedia_df.set_index('gbifID', inplace = True)
 
-#Define Species info data
-species_info_columns = ['common_name','scientific_name', 'species_key', 'genus_key', 'forefront_recordings', 'background_recordings']
-species_info_arr = []
-#Create sample info
-data_dictionary_path = os.path.join(this_file_dir_path, 'dataset', 'data_dictionary')
-#check if data_dictionary directory exists
-if os.path.exists(data_dictionary_path):
-    for filename in os.listdir(data_dictionary_path):
-        file_path = os.path.join(data_dictionary_path, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            print('Failed to delete {}. Exceptions: {}'.format(file_path, e)) 
-else:
-    os.makedirs(data_dictionary_path)
+    #Define all undefined species as unknown species
+    occurrence_df['species'] = occurrence_df['species'].fillna('Unkown').str.lower()
+    occurrence_df['vernacularName'] = occurrence_df['vernacularName'].fillna('Unkown').str.lower()
+    occurrence_df['speciesKey'] = occurrence_df['speciesKey'].fillna(0).astype(int)
+    occurrence_df['genusKey'] = occurrence_df['genusKey'].fillna(0).astype(int)
 
-samples_metadata_path = os.path.join(data_dictionary_path, 'samples_metadata.json')
-samples_per_species = occurrence_df.groupby(['speciesKey']) #group samples of each species
-progress_bar = ProgressBar(len(occurrence_df))
-samples_metadata = {}
-species_samples_info = { species_key : { 'forefront_sample_ids': [], 'background_sample_ids': [] } for species_key in samples_per_species.groups.keys()}
+    #speciesKey	species
+    species_name_key_df = occurrence_df[['speciesKey', 'species']]
+    species_to_key_dict = dict(zip(species_name_key_df['species'], species_name_key_df['speciesKey']))
 
-for species_key, samples in samples_per_species:    #iterate over each species
-    genus_key, scientific_name, common_name = get_species_info(species_key)
-    #add species info 'row'
-    species_info_arr.append([
-        common_name,
-        scientific_name, 
-        species_key, 
-        genus_key, 
-        len(samples), 
-        0
-    ])
+    #Define Species info data
+    species_info_columns = ['common_name','scientific_name', 'species_key', 'genus_key', 'forefront_recordings', 'background_recordings']
+    species_info_arr = []
+    #Create sample info
+    #check if data_dictionary directory exists
+    if os.path.exists(data_dictionary_path):
+        for filename in os.listdir(data_dictionary_path):
+            file_path = os.path.join(data_dictionary_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print('Failed to delete {}. Exceptions: {}'.format(file_path, e)) 
+    else:
+        os.makedirs(data_dictionary_path)
 
-    samples.apply(lambda row: add_sample_dict(samples_metadata, species_key, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa'], progress_bar), axis=1)
+    samples_metadata_path = os.path.join(data_dictionary_path, 'samples_metadata.json')
+    samples_per_species = occurrence_df.groupby(['speciesKey']) #group samples of each species
+    progress_bar = ProgressBar(len(occurrence_df))
+    samples_metadata = {}
+    species_samples_info = { species_key : { 'forefront_sample_ids': [], 'background_sample_ids': [] } for species_key in samples_per_species.groups.keys()}
 
-with open(samples_metadata_path, 'w') as outfile:
-    json.dump(samples_metadata, outfile, indent=4)
-#write species samples info 
-species_info_path = os.path.join(data_dictionary_path, 'species_sample_info.json')
-with open(species_info_path, 'w') as outfile:
-    json.dump(species_samples_info, outfile, indent=4)
-#Create dataframe for species info
-species_info_df = pd.DataFrame(data = species_info_arr, columns = species_info_columns)
-species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
-species_info_df['background_recordings'] = [len(species_samples_info[key].get('background_sample_ids', [])) for key in species_info_df['species_key']]
-#clean up unknown species row
-species_info_df.loc[species_info_df['species_key'] == 0, 'common_name'] = 'unknown'
-species_info_df.loc[species_info_df['species_key'] == 0, 'genus_key'] = 0
+    for species_key, samples in samples_per_species:    #iterate over each species
+        genus_key, scientific_name, common_name = get_species_info(species_key)
+        #add species info 'row'
+        species_info_arr.append([
+            common_name,
+            scientific_name, 
+            species_key, 
+            genus_key, 
+            len(samples), 
+            0
+        ])
 
-species_info_df.to_csv(species_info_path, index=False)
+        samples.apply(lambda row: add_sample_dict(samples_metadata, species_key, row['gbifID'], row['decimalLatitude'], row['decimalLongitude'], row['eventDate'], row['behavior'], row['associatedTaxa'], progress_bar), axis=1)
 
-print()
-print("data dictionary creation completed")
+    with open(samples_metadata_path, 'w') as outfile:
+        json.dump(samples_metadata, outfile, indent=4)
+    #write species samples info 
+    species_info_path = os.path.join(data_dictionary_path, 'species_sample_info.json')
+    with open(species_info_path, 'w') as outfile:
+        json.dump(species_samples_info, outfile, indent=4)
+    #Create dataframe for species info
+    species_info_df = pd.DataFrame(data = species_info_arr, columns = species_info_columns)
+    species_info_path = os.path.join(data_dictionary_path, 'species_info.csv')
+    species_info_df['background_recordings'] = [len(species_samples_info[key].get('background_sample_ids', [])) for key in species_info_df['species_key']]
+    #clean up unknown species row
+    species_info_df.loc[species_info_df['species_key'] == 0, 'common_name'] = 'unknown'
+    species_info_df.loc[species_info_df['species_key'] == 0, 'genus_key'] = 0
+
+    species_info_df.to_csv(species_info_path, index=False)
+
+    print()
+    print("data dictionary creation completed")
 
 

@@ -3,15 +3,20 @@ __pycache__/
 .vscode/
 .DS_Store
 .ipynb_checkpoints/
-#Ignore gbif-xeno-canto dataset info
-xeno_canto_bsfatw/
-#Ignore generated datset files and directories
-data_dictionary/
-dataset/
-audio_event_plots/
+
+
+# Project directories
+
+# Ignore gbif-xeno-canto dataset info
+
+# Ignore generated datset files and directories
+data/*
+
+# Project files
+
 #Jupyter notebooks
-#ignoring new changes to this notebook
 audio_sample_analysis.ipynb 
+
 
 #Exceptions
 !.gitkeep
