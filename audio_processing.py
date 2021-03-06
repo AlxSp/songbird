@@ -30,11 +30,11 @@ AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plot
 def getZScoreParameters():
     return AudioConversionParameters, EventDetectionParameters, ClusteringParameters, EventProcessingParameters, AdditionalParameters
 
-CustomAudioConversionParameters = namedtuple('AudioConversionParameters', [ 'main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
-CustomAudioProcessingParameters = namedtuple('AudioProcessingParameters', ['fn_process_spectogram', 'relevant_freq_range'])
-CustomEventDetectionParameters = namedtuple('EventDetectionParameters', ['fn_detect_peaks_in_spectogram', 'mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
-CustomClusteringParameters = namedtuple('ClusteringParameters', ['fn_cluster_audio_events', 'min_cluster_size'])
-CustomEventProcessingParameters = namedtuple('EventProcessingParameters', ['event_distance_max', 'event_freq_differnce_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
+CustomAudioConversionParameters = namedtuple('CustomAudioConversionParameters', [ 'main_sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
+CustomAudioProcessingParameters = namedtuple('CustomAudioProcessingParameters', ['fn_process_spectogram', 'relevant_freq_range'])
+CustomEventDetectionParameters = namedtuple('CustomEventDetectionParameters', ['fn_detect_peaks_in_spectogram', 'mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
+CustomClusteringParameters = namedtuple('CustomClusteringParameters', ['fn_cluster_audio_events', 'min_cluster_size'])
+CustomEventProcessingParameters = namedtuple('CustomEventProcessingParameters', ['event_distance_max', 'event_freq_differnce_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
 AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plots')
 
 def getCustomParameters():
@@ -276,7 +276,7 @@ def save_spectogram_plot(spectogram_matrix, sample_rate, step_size, sample_id, t
     plt.savefig(os.path.join(plots_path, str(sample_id), title + '.png'))
 
 
-def save_cluster_plot(peak_coordinates, clusterer, sample_id):
+def save_cluster_plot(peak_coordinates, sample_rate, step_size, clusterer, sample_id, x_dim, y_dim, y_labels, y_tick_num = 6,):
     def adjust_alpha(color, alpha):
         color[-1] = alpha
         return color
@@ -290,10 +290,25 @@ def save_cluster_plot(peak_coordinates, clusterer, sample_id):
     f = plt.figure(figsize=(10,5), dpi = 80)
     ax = f.add_subplot()
     ax.set_title(f"HDBScan number of clusters: {(len(set(clusterer.labels_)) - 1)}") #set title 
-    ax.set_facecolor('black')
-    ax.scatter(peak_coordinates[:,1], peak_coordinates[:,0], s=2, linewidth=0, c=colors_with_probs)
+    ax.set_facecolor('dimgray')
+    
+    ax.xaxis.set_ticks_position('bottom') #set x ticks to bottom of graph 
+    ax.set_xlabel('Time (sec)')
+    locator_num = 16 if x_dim * step_size // sample_rate >= 16 else x_dim * step_size // sample_rate
+    ax.set_xlim(left = 0, right = x_dim)
+    ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
+    formatter = ticker.FuncFormatter(lambda ms, x: time.strftime('%-S', time.gmtime(ms * step_size // sample_rate)))
+    ax.xaxis.set_major_formatter(formatter)
+
+    ax.set_ylabel('Hz')
+    ax.set_ylim(0, y_dim)
+    y_tick_steps = int(len(y_labels) / y_tick_num)
+    ax.set_yticks(np.arange(0, len(y_labels), y_tick_steps))
+    ax.set_yticklabels(y_labels[0::y_tick_steps])
+    scatter_plot = ax.scatter(peak_coordinates[:,1], peak_coordinates[:,0], s=2, linewidth=0, c=colors_with_probs)
 
     plt.tight_layout()
+    plt.colorbar(scatter_plot)
     plt.savefig(os.path.join(plots_path, str(sample_id), "Clusters.png"))
 
 def create_spectogram(sample, window_size, step_size, main_sample_rate):
@@ -402,12 +417,15 @@ def create_audio_events_with_custom(
     #trim the spectogram to a specified frequency range
     db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
 
+    if additional_parameters.generate_process_plots:    #save the decibel spectogram
+        save_spectogram_plot(np.array(db_frames).T, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+
     db_frames, rfft_bin_freq = audio_processing_parameters.fn_process_spectogram(db_frames, rfft_bin_freq, audio_processing_parameters)    
 
     transposed_db_spectogram = np.array(db_frames).T #transpose spectogram frames dimension from (time_step, frequency) to (frequency, time_step)
 
     if additional_parameters.generate_process_plots:    #save the decibel spectogram
-        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Post processing Spectogram (Decibel)", y_labels = rfft_bin_freq)
 
     #detect peaks in spectogram
     spectogram_peaks = event_detection_parameters.fn_detect_peaks_in_spectogram(transposed_db_spectogram, event_detection_parameters)
@@ -419,7 +437,7 @@ def create_audio_events_with_custom(
     audio_event_index_scopes, peak_coordinates, clusterer = clustering_parameters.fn_cluster_audio_events(spectogram_peaks, clustering_parameters)
 
     if additional_parameters.generate_process_plots: #save cluster plot
-        save_cluster_plot(peak_coordinates, clusterer, sample_id)
+        save_cluster_plot(peak_coordinates, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectogram_peaks.shape[1], spectogram_peaks.shape[0], rfft_bin_freq,)
 
     audio_event_index_scopes = concatenate_events(audio_event_index_scopes, event_processing_parameters)
 
@@ -462,7 +480,7 @@ def create_audio_events_with_zscore(
     audio_event_index_scopes, peak_coordinates, clusterer = cluster_audio_events(spectogram_peaks, clustering_parameters)
 
     if additional_parameters.generate_process_plots: #save cluster plot
-        save_cluster_plot(peak_coordinates, clusterer, sample_id)
+        save_cluster_plot(peak_coordinates, audio_conversion_parameters.main_sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectogram_peaks.shape[1], spectogram_peaks.shape[0], rfft_bin_freq,)
 
     audio_event_index_scopes = concatenate_events(audio_event_index_scopes, event_processing_parameters)
     

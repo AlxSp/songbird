@@ -43,14 +43,14 @@ event_length_min = int(0.125 * main_sample_rate) # 125ms * sample rate will give
 start_buffer_len = int(.5 * main_sample_rate)
 end_buffer_len = int(.5 * main_sample_rate)
 
-AudioConversionParameters, AudioProcessingParameters, EventDetectionParameters, ClusteringParameters, EventProcessingParameters, AdditionalParameters = ap.getCustomParameters()
+CustomAudioConversionParameters, CustomAudioProcessingParameters, CustomEventDetectionParameters, CustomClusteringParameters, CustomEventProcessingParameters, AdditionalParameters = ap.getCustomParameters()
 
 
 if __name__ == "__main__":
-    audio_conversion_parameters = AudioConversionParameters(main_sample_rate, window_size, step_size, max_frequency, min_frequency)
-    audio_processing_parameters = AudioProcessingParameters(ap.process_spectogram, relevant_freq_range)
-    event_detection_parameters = EventDetectionParameters(ap.detect_peaks_in_spectogram, mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
-    clustering_parameters = ClusteringParameters(ap.cluster_audio_events, min_cluster_size)
-    event_processing_parameters = EventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
+    audio_conversion_parameters = CustomAudioConversionParameters(main_sample_rate, window_size, step_size, max_frequency, min_frequency)
+    audio_processing_parameters = CustomAudioProcessingParameters(ap.process_spectogram, relevant_freq_range)
+    event_detection_parameters = CustomEventDetectionParameters(ap.detect_peaks_in_spectogram, mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
+    clustering_parameters = CustomClusteringParameters(ap.cluster_audio_events, min_cluster_size)
+    event_processing_parameters = CustomEventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
 
     ap.custom_main(ap.create_audio_events_with_custom, audio_conversion_parameters, audio_processing_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, )
