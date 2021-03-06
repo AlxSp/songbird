@@ -138,6 +138,7 @@
         create_audio_events_with_custom(
         sample_id, 
         audio_conversion_parameters, 
+        audio_processing_parameters,
         event_detection_parameters, 
         clustering_parameters, 
         event_processing_parameters, 
@@ -147,13 +148,14 @@
     The main functions follow a format which makes it easy to adjust parameters or swap out entire functions:
 
     audio_conversion: parameters to convert the audio from file to array and to a spectrogram
+    audio_processing: parameters to alter the spectogram
     event_detection:  parameters to detect audio anomalies or peaks in the spectrogram
     clustering: parameters to cluster the peaks into events
     event_processing: parameters to convert the events into a standard format of start_time, end_time, max_frequency and min_frequency
 
     ### Custom function pipeline:
 
-    #### 1. audio conversion function (`fn_process_spectogram(spectogram)`):
+    #### 1. audio processing function (`fn_process_spectogram(spectogram)`):
         
     > The purpose of this function is to further manipulate the spectogram before peaks are detected.
         
