@@ -369,7 +369,7 @@ def cluster_audio_events(spectogram_peaks, clustering_parameters):
 ######################################################################################################################
 # main functions #####################################################################################################
 
-def custom_create_audio_events_from_sample( process_function, 
+def custom_detect_audio_events_in_sample( process_function, 
     sample_id, 
     audio_conversion_parameters, 
     audio_processing_parameters,
@@ -386,7 +386,7 @@ def custom_create_audio_events_from_sample( process_function,
 
     audio_events_to_csv(audio_events, sample_id)
 
-def create_audio_events_from_sample( process_function, 
+def detect_audio_events_in_sample( process_function, 
     sample_id, 
     audio_conversion_parameters, 
     event_detection_parameters, 
@@ -402,7 +402,7 @@ def create_audio_events_from_sample( process_function,
 
     audio_events_to_csv(audio_events, sample_id)
 
-def create_audio_events_with_custom(
+def detect_audio_events_with_custom(
     sample_id, 
     audio_conversion_parameters, 
     audio_processing_parameters,
@@ -449,7 +449,7 @@ def create_audio_events_with_custom(
     #save events
     return audio_events
 
-def create_audio_events_with_zscore(
+def detect_audio_events_with_zscore(
     sample_id, 
     audio_conversion_parameters, 
     event_detection_parameters, 
@@ -534,10 +534,10 @@ def custom_main(process_function, audio_conversion_parameters, audio_processing_
     if args.multi_processing:
         print(f"Using {args.multi_processing} cores for multi processing!")
         with multiprocessing.Pool(processes=args.multi_processing) as pool:
-            pool.starmap(custom_create_audio_events_from_sample, [(process_function, sample_id, audio_conversion_parameters, audio_processing_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters) for sample_id in sample_id_arr])
+            pool.starmap(custom_detect_audio_events_in_sample, [(process_function, sample_id, audio_conversion_parameters, audio_processing_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters) for sample_id in sample_id_arr])
     else:
         for sample_id in sample_id_arr:
-            custom_create_audio_events_from_sample(process_function, sample_id, audio_conversion_parameters, audio_processing_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
+            custom_detect_audio_events_in_sample(process_function, sample_id, audio_conversion_parameters, audio_processing_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
 
 
 def main(process_function, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, ):
@@ -548,10 +548,10 @@ def main(process_function, audio_conversion_parameters, event_detection_paramete
     if args.multi_processing:
         print(f"Using {args.multi_processing} cores for multi processing!")
         with multiprocessing.Pool(processes=args.multi_processing) as pool:
-            pool.starmap(create_audio_events_from_sample, [(process_function, sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters) for sample_id in sample_id_arr])
+            pool.starmap(detect_audio_events_in_sample, [(process_function, sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters) for sample_id in sample_id_arr])
     else:
         for sample_id in sample_id_arr:
-            create_audio_events_from_sample(process_function, sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
+            detect_audio_events_in_sample(process_function, sample_id, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
 
 
 if __name__ == '__main__':
@@ -591,4 +591,4 @@ if __name__ == '__main__':
     clustering_parameters = ClusteringParameters(min_cluster_size)
     event_processing_parameters = EventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
 
-    main(create_audio_events_with_zscore, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters)
+    main(detect_audio_events_with_zscore, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters)
