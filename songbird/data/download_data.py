@@ -382,7 +382,7 @@ if __name__ == "__main__":
                                     This argument is valid with --all, --use_species_keys, --use_sample_ids, and use --use_sample_ids_from_file argument is given')               
     
     parser.add_argument('--reset_download_dir', required=False, action='store_true',
-                            help =  'If this argument is given, the **dataset/raw/** directory will be \
+                            help =  'If this argument is given, the **data/raw/** directory will be \
                                     completely emptied before samples are downloaded. And the download_species_sample_info.json file will be removed')
     args = parser.parse_args()
 
@@ -400,7 +400,7 @@ if __name__ == "__main__":
     downloaded_sample_ids = []          # list of downloaded sample ids
     download_species_sample_info = {}   # dictionary of downloaded species and their samples
 
-    if os.path.isdir(raw_data_path): #if dataset/raw does exist
+    if os.path.isdir(raw_data_path): #if data/raw does exist
         if args.reset_download_dir:  #if reset download dir is given, delete all samples in dir
             print("Reseting '{}' dir".format(raw_data_path))
             empty_or_create_dir(raw_data_path)
@@ -417,7 +417,7 @@ if __name__ == "__main__":
             else:   # create a dictionary from the download species sample info
                 with open(download_species_sample_info_file_path) as f:
                     download_species_sample_info = {int(species_key): info for species_key, info in json.load(f).items()}
-    else:   # if dataset does not exist, create it
+    else:   # if data does not exist, create it
         print("Creating '{}' directory for downloads.".format(raw_data_path))
         empty_or_create_dir(raw_data_path)
 

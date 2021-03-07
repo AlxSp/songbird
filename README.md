@@ -124,7 +124,7 @@
 
     Main functions & arguments:
 
-        create_audio_events_with_zscore(
+        detect_audio_events_with_zscore(
         sample_id
         audio_conversion_parameters, 
         event_detection_parameters, 
@@ -135,7 +135,7 @@
 
     Custom function: 
 
-        create_audio_events_with_custom(
+        detect_audio_events_with_custom(
         sample_id, 
         audio_conversion_parameters, 
         audio_processing_parameters,
