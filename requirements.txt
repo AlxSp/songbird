@@ -6,3 +6,6 @@ numpy
 hdbscan
 pandas
 jupyter
+torch
+torchvision
+torchaudio

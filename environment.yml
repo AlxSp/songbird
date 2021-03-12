@@ -1,5 +1,6 @@
 name: songbird
 channels:
+  - pytorch
   - conda-forge
   - defaults
 dependencies:
@@ -11,15 +12,16 @@ dependencies:
   - attrs=20.3.0=pyhd3eb1b0_0
   - audioread=2.1.9=py38h578d9bd_0
   - backcall=0.2.0=pyhd3eb1b0_0
-  - blas=1.0=openblas
+  - blas=1.0=mkl
   - bleach=3.3.0=pyhd3eb1b0_0
   - brotlipy=0.7.0=py38h497a2fe_1001
   - bzip2=1.0.8=h7f98852_4
-  - ca-certificates=2021.1.19=h06a4308_0
-  - certifi=2020.12.5=py38h06a4308_0
+  - ca-certificates=2020.12.5=ha878542_0
+  - certifi=2020.12.5=py38h578d9bd_1
   - cffi=1.14.4=py38ha312104_0
   - chardet=4.0.0=py38h578d9bd_1
   - cryptography=3.4.4=py38h3e25421_0
+  - cudatoolkit=11.1.1=h6406543_8
   - cycler=0.10.0=py_2
   - dbus=1.13.18=hb2f20db_0
   - decorator=4.4.2=py_0
@@ -36,10 +38,11 @@ dependencies:
   - gst-plugins-base=1.14.5=h0935bb2_2
   - gstreamer=1.14.5=h36ae1b5_2
   - hdbscan=0.8.27=py38h5c078b8_0
-  - icu=64.2=he1b5a44_1
+  - icu=58.2=hf484d3e_1000
   - idna=2.10=pyh9f0ad1d_0
   - importlib-metadata=2.0.0=py_1
   - importlib_metadata=2.0.0=1
+  - intel-openmp=2020.2=254
   - ipykernel=5.3.4=py38h5ca1d4c_0
   - ipython=7.20.0=py38hb070fc8_1
   - ipython_genutils=0.2.0=pyhd3eb1b0_1
@@ -47,7 +50,7 @@ dependencies:
   - jedi=0.17.0=py38_0
   - jinja2=2.11.3=pyhd3eb1b0_0
   - joblib=1.0.1=pyhd8ed1ab_0
-  - jpeg=9d=h36c2ea0_0
+  - jpeg=9b=h024ee3a_2
   - jsonschema=3.2.0=py_2
   - jupyter=1.0.0=py38_7
   - jupyter_client=6.1.7=py_0
@@ -57,10 +60,10 @@ dependencies:
   - jupyterlab_widgets=1.0.0=pyhd3eb1b0_1
   - kiwisolver=1.3.1=py38h1fd1430_1
   - lame=3.100=h7f98852_1001
-  - lcms2=2.12=hddcbb42_0
+  - lcms2=2.11=h396b838_0
   - ld_impl_linux-64=2.35.1=hea4e1c9_2
-  - libblas=3.9.0=8_openblas
-  - libcblas=3.9.0=8_openblas
+  - libblas=3.8.0=21_mkl
+  - libcblas=3.8.0=21_mkl
   - libffi=3.2.1=he1b5a44_1007
   - libflac=1.3.3=h9c3ff4c_1
   - libgcc-ng=9.3.0=h2828fa1_18
@@ -68,7 +71,7 @@ dependencies:
   - libgfortran5=9.3.0=hff62375_18
   - libgomp=9.3.0=h2828fa1_18
   - libiconv=1.16=h516909a_0
-  - liblapack=3.9.0=8_openblas
+  - liblapack=3.8.0=21_mkl
   - libllvm10=10.0.1=he513fc3_3
   - libogg=1.3.4=h7f98852_1
   - libopenblas=0.3.12=pthreads_h4812303_1
@@ -78,31 +81,37 @@ dependencies:
   - libsndfile=1.0.31=h9c3ff4c_0
   - libsodium=1.0.18=h7b6447c_0
   - libstdcxx-ng=9.3.0=h6de172a_18
-  - libtiff=4.2.0=hdc55705_0
+  - libtiff=4.1.0=h2733197_1
   - libuuid=2.32.1=h7f98852_1000
+  - libuv=1.41.0=h7f98852_0
   - libvorbis=1.3.7=h9c3ff4c_0
   - libwebp-base=1.2.0=h7f98852_0
   - libxcb=1.13=h7f98852_1003
-  - libxml2=2.9.10=hee79883_0
+  - libxml2=2.9.10=hb55368b_3
   - llvmlite=0.35.0=py38h4630a5e_1
   - lz4-c=1.9.3=h9c3ff4c_0
   - markupsafe=1.1.1=py38h7b6447c_0
   - matplotlib=3.3.4=py38h578d9bd_0
   - matplotlib-base=3.3.4=py38h0efea84_0
   - mistune=0.8.4=py38h7b6447c_1000
+  - mkl=2020.2=256
+  - mkl-service=2.3.0=py38h1e0a361_2
+  - mkl_fft=1.2.0=py38hab2c0dc_1
+  - mkl_random=1.2.0=py38hc5bc63f_1
   - nbclient=0.5.1=py_0
   - nbconvert=6.0.7=py38_0
   - nbformat=5.1.2=pyhd3eb1b0_1
   - ncurses=6.2=h58526e2_4
   - nest-asyncio=1.4.3=pyhd3eb1b0_0
   - nettle=3.6=he412f7d_0
+  - ninja=1.10.2=h4bd325d_0
   - notebook=6.2.0=py38h06a4308_0
   - numba=0.52.0=py38h51da96c_0
-  - numpy=1.19.2=py38h6163131_0
-  - numpy-base=1.19.2=py38h75fe3a5_0
+  - numpy=1.19.2=py38h54aff64_0
+  - numpy-base=1.19.2=py38hfa32c7d_0
   - olefile=0.46=pyh9f0ad1d_1
   - openh264=2.1.1=h780b84a_0
-  - openssl=1.1.1i=h27cfd23_0
+  - openssl=1.1.1j=h7f98852_0
   - packaging=20.9=pyh44b312d_0
   - pandas=1.2.1=py38ha9443f7_0
   - pandoc=2.11=hb0f4dca_0
@@ -111,7 +120,7 @@ dependencies:
   - pcre=8.44=he1b5a44_0
   - pexpect=4.8.0=pyhd3eb1b0_3
   - pickleshare=0.7.5=pyhd3eb1b0_1003
-  - pillow=8.1.0=py38ha0e1e83_2
+  - pillow=8.1.2=py38he98fc37_0
   - pip=21.0.1=pyhd8ed1ab_0
   - pooch=1.3.0=pyhd8ed1ab_0
   - prometheus_client=0.9.0=pyhd3eb1b0_0
@@ -130,9 +139,10 @@ dependencies:
   - python=3.8.6=h852b56e_0_cpython
   - python-dateutil=2.8.1=py_0
   - python_abi=3.8=1_cp38
+  - pytorch=1.8.0=py3.8_cuda11.1_cudnn8.0.5_0
   - pytz=2021.1=pyhd3eb1b0_0
   - pyzmq=20.0.0=py38h2531618_1
-  - qt=5.9.7=h0c104cb_3
+  - qt=5.9.7=h5867ecd_1
   - qtconsole=5.0.2=pyhd3eb1b0_0
   - qtpy=1.9.0=py_0
   - readline=8.0=he28a2e2_2
@@ -149,8 +159,11 @@ dependencies:
   - testpath=0.4.4=pyhd3eb1b0_0
   - threadpoolctl=2.1.0=pyh5ca1d4c_0
   - tk=8.6.10=h21135ba_1
+  - torchaudio=0.8.0=py38
+  - torchvision=0.9.0=py38_cu111
   - tornado=6.1=py38h497a2fe_1
   - traitlets=5.0.5=pyhd3eb1b0_0
+  - typing_extensions=3.7.4.3=py_0
   - urllib3=1.26.3=pyhd8ed1ab_0
   - wcwidth=0.2.5=py_0
   - webencodings=0.5.1=py38_1
