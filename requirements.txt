@@ -2,6 +2,7 @@
 requests
 librosa
 matplotlib
+scipy
 numpy
 hdbscan
 pandas
