@@ -99,11 +99,11 @@ def download_by_sample_ids(sample_ids : list, samples_metadata : dict, destinati
         except requests.exceptions.TooManyRedirects as e:
             print(f"TOO MANY REDIRECTS ERROR for sample {sample_id}(gbif_id) with url {url_link}! {e}")
             download_error = True
-        except requests.exceptions.RaiseException as e:
-            print(f"TIME OUT ERROR for sample {sample_id}(gbif_id) with url {url_link}! {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"REQUEST EXCPETION for sample {sample_id}(gbif_id) with url {url_link}! {e}")
             download_error = True
         except requests.exceptions.HTTPError as e:
-            print(f"TIME OUT ERROR for sample {sample_id}(gbif_id) with url {url_link}! {e}")
+            print(f"URL ERROR for sample {sample_id}(gbif_id) with url {url_link}! {e}")
             download_error = True
 
         if download_error:
@@ -436,4 +436,4 @@ if __name__ == "__main__":
         write_mode = 'a' if os.path.exists(failed_to_download_sample_ids_file_path) else 'w' # if file already exists; append to it, otherwise create it 
         with open(failed_to_download_sample_ids_file_path, write_mode) as outfile:
             for sample_id in failed_to_download_sample_ids:
-                f.write(f"{sample_id}, ")
+                outfile.write(f"{sample_id}, ")
