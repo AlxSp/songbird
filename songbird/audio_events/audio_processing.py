@@ -24,12 +24,13 @@ warnings.filterwarnings('ignore') #filter warnings to suppress; warnings.warn("P
 this_file_dir = os.path.dirname(os.path.abspath(__file__)) #absolute path to this file's directory
 project_base_dir = os.path.dirname(os.path.dirname(this_file_dir)) #path to base dir of project
 data_dir = os.path.join(project_base_dir, 'data')  #path to data_dir
+reports_dir = os.path.join(project_base_dir, 'reports')
 
 raw_sample_dir = os.path.join(data_dir, 'raw') #path pointing to samples
 audio_events_dir = os.path.join(data_dir, 'audio_events') #path pointing to samples
 samples_metadata_file_path = os.path.join(data_dir, 'data_dictionary', 'samples_metadata.json')
 download_species_sample_path = os.path.join(data_dir, 'data_dictionary', 'download_species_sample_info.json')
-plots_path = os.path.join(data_dir, 'audio_event_plots')
+plots_path = os.path.join(reports_dir, 'audio_event_plots')
 
 
 ######################################################################################################################
@@ -73,25 +74,32 @@ def empty_or_create_dir(dir_path):
             except Exception as e:
                 print('Failed to delete {}. Exceptions: {}'.format(file_path, e)) 
     else:
-        os.mkdir(dir_path)
+        os.makedirs(dir_path)
 
 
 def get_all_samples_ids(dir_path):
     return [os.path.splitext(f)[0] for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
 
-def load_audio_sample(sample_id, sample_rate):
+def load_audio_sample(sample_id, sample_rate, sample_dir = None):
     '''
     loads an audio sample by it's id (file name). Returns the audio and the the sample rate
     '''
-    audio_file_path = os.path.join(raw_sample_dir, str(sample_id) + '.mp3')
+    sample_dir = raw_sample_dir if sample_dir is None else sample_dir
+    audio_file_path = os.path.join(sample_dir, str(sample_id) + '.mp3')
     if not os.path.isfile(audio_file_path): #check if file exists
-        raise Exception(f"Sample with id '{sample_id}' does not exist! Available files can be found in the {raw_sample_dir} directory")
+        raise Exception(f"Sample with id '{sample_id}' does not exist! Available files can be found in the {sample_dir} directory")
     #sample audio at 44.1 khz and get the time series as a numpy array
     time_series, sample_rate = librosa.load(audio_file_path, sr = sample_rate)
     #trim empty start and end padding from time series
     time_series, _ = librosa.effects.trim(time_series)
 
     return time_series, sample_rate
+
+def load_audio_events(sample_id):
+    file_path = os.path.join(audio_events_dir, sample_id + '.csv')
+    with open(file_path, mode='r') as file:
+        df = pd.read_csv(file)
+    return df.to_dict('records')
 
 # Utility ############################################################################################################
 ######################################################################################################################
@@ -232,6 +240,9 @@ def concatenate_events(event_arr, event_processing_parameters):
 def index_scopes_to_unit_scopes(event_scopes, sample_rate, step_size, rfft_freq_bins):
     return [[scope[0] * step_size / sample_rate, scope[1] * step_size / sample_rate, rfft_freq_bins[scope[2]], rfft_freq_bins[scope[3]]] for scope in event_scopes]
 
+def unit_time_to_index(event_time, sample_rate):
+    return int(event_time * sample_rate)
+
 def audio_events_to_csv(events, sample_id):
     with open(os.path.join(audio_events_dir, str(sample_id) + '.csv'), 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter = ',')
@@ -242,7 +253,7 @@ def audio_events_to_csv(events, sample_id):
 # Audio Events #######################################################################################################
 ######################################################################################################################
 
-
+# region plotting 
 ######################################################################################################################
 # plotting ###########################################################################################################
 
@@ -312,6 +323,32 @@ def save_cluster_plot(peak_coordinates, sample_rate, step_size, clusterer, sampl
     plt.colorbar(scatter_plot)
     plt.savefig(os.path.join(plots_path, str(sample_id), "Clusters.png"))
 
+def show_amplitude_wave_plot(time_series, sample_rate):
+    '''
+    plots the amplitude vs time of the sample 
+    '''
+    fig, ax = plt.subplots(figsize=(10,5), dpi= 80)
+
+
+    ax.plot(time_series)
+
+    locator_num = 16 if len(time_series) // sample_rate >= 16 else len(time_series) // sample_rate
+    ax.set_xlim(left = 0, right = len(time_series))
+    ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
+    formatter = ticker.FuncFormatter(lambda ms, x: time.strftime('%-S', time.gmtime(ms // sample_rate)))
+    ax.xaxis.set_major_formatter(formatter)
+    ax.set_xlabel('Time (sec)')
+    ax.set_ylabel('Amplitude')
+    plt.show()
+
+# plotting ###########################################################################################################
+######################################################################################################################
+# endregion
+
+# region audio processing
+######################################################################################################################
+# audio processing ###################################################################################################
+
 def create_spectogram(sample, window_size, step_size, sample_rate):
     #create time series frames
     time_series_frames = get_even_time_series_frames(sample, window_size, step_size)
@@ -325,12 +362,6 @@ def create_spectogram(sample, window_size, step_size, sample_rate):
     db_frames = librosa.power_to_db(power_frames, ref=np.max)
 
     return db_frames, rfft_bin_freq
-
-# plotting ###########################################################################################################
-######################################################################################################################
-
-######################################################################################################################
-# audio processing ###################################################################################################
 
 def process_spectogram(db_frames, rfft_bin_freq, audio_processing_parameters):
     #test #######
@@ -365,6 +396,8 @@ def cluster_audio_events(spectogram_peaks, clustering_parameters):
 
 # audio processing ###################################################################################################
 ######################################################################################################################
+# endregion
+
 
 ######################################################################################################################
 # main functions #####################################################################################################
