@@ -141,29 +141,29 @@
     The main functions follow a format which makes it easy to adjust parameters or swap out entire functions:
 
     audio_conversion: parameters to convert the audio from file to array and to a spectrogram
-    audio_processing: parameters to alter the spectogram
+    audio_processing: parameters to alter the spectrogram
     event_detection:  parameters to detect audio anomalies or peaks in the spectrogram
     clustering: parameters to cluster the peaks into events
     event_processing: parameters to convert the events into a standard format of start_time, end_time, max_frequency and min_frequency
 
     ### Custom function pipeline:
 
-    #### 1. audio processing function (`fn_process_spectogram(spectogram)`):
+    #### 1. audio processing function (`fn_process_spectrogram(spectrogram)`):
         
-    > The purpose of this function is to further manipulate the spectogram before peaks are detected.
+    > The purpose of this function is to further manipulate the spectrogram before peaks are detected.
         
     Input:    
-    - a 2d array  which represents a spectogram. Input format is ( time_steps, frequency_bins ).
+    - a 2d array  which represents a spectrogram. Input format is ( time_steps, frequency_bins ).
     
     Output: 
-    - a 2d array  which represents a spectogram. Output format is ( time_steps, frequency_bins ). 
+    - a 2d array  which represents a spectrogram. Output format is ( time_steps, frequency_bins ). 
 
-    #### 2. peak detection function (`fn_detect_peaks_in_spectogram(transposed_spectogram, event_detection_parameters)`):
+    #### 2. peak detection function (`fn_detect_peaks_in_spectrogram(transposed_spectrogram, event_detection_parameters)`):
         
-    > The purpose of this function is to audio_events/peaks in the spectogram. While iterating over the spectogram when a peak is detected, it should be marked on an identically sized matrix with 1. It's best to create an identically sized matrix filled with 0s and then add the 1s.
+    > The purpose of this function is to audio_events/peaks in the spectrogram. While iterating over the spectrogram when a peak is detected, it should be marked on an identically sized matrix with 1. It's best to create an identically sized matrix filled with 0s and then add the 1s.
         
     Input:    
-    - a 2d array  which represents a transposed spectogram. Input format is (frequency_bins, time_steps).
+    - a 2d array  which represents a transposed spectrogram. Input format is (frequency_bins, time_steps).
     - additional parameters which are required inside of the function (set by user)
 
     
@@ -172,7 +172,7 @@
     
     ----
 
-    #### 3. peak clustering function (`fn_cluster_audio_events(spectogram_peaks, event_detection_parameters)`):
+    #### 3. peak clustering function (`fn_cluster_audio_events(spectrogram_peaks, event_detection_parameters)`):
         
     > The purpose of this function is to cluster the peaks into "complete" events
         
@@ -181,7 +181,7 @@
     - additional parameters which are required inside of the function (set by user)
     
     Output: 
-    - a 2d array  which represents a spectogram. Output format is (frequency_bins, time_steps). 
+    - a 2d array  which represents a spectrogram. Output format is (frequency_bins, time_steps). 
 
 
 ## Jupyter Notebooks
@@ -190,7 +190,7 @@ notebooks/
 
 * ### audio_sample_analysis.ipynb
 
-    Use this notebook to quickly checkout the wave plot and mel spectogram of downloaded samples.
+    Use this notebook to quickly checkout the wave plot and mel spectrogram of downloaded samples.
 
 
 ## Project Structure:

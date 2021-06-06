@@ -44,7 +44,7 @@ event_length_min = int(0.125 * sample_rate) # 125ms * sample rate will give us t
 start_buffer_len = int(.5 * sample_rate)
 end_buffer_len = int(.5 * sample_rate)
 
-def process_spectogram(db_frames, rfft_bin_freq, audio_processing_parameters):
+def process_spectrogram(db_frames, rfft_bin_freq, audio_processing_parameters):
     return db_frames, rfft_bin_freq
     # #test #######
     # relevant_freq_range = audio_processing_parameters.relevant_freq_range #always use uneven number
@@ -68,8 +68,8 @@ CustomAudioConversionParameters, CustomAudioProcessingParameters, CustomEventDet
 
 if __name__ == "__main__":
     audio_conversion_parameters = CustomAudioConversionParameters(sample_rate, window_size, step_size, max_frequency, min_frequency)
-    audio_processing_parameters = CustomAudioProcessingParameters(process_spectogram, relevant_freq_range)
-    event_detection_parameters = CustomEventDetectionParameters(ap.detect_peaks_in_spectogram, mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
+    audio_processing_parameters = CustomAudioProcessingParameters(process_spectrogram, relevant_freq_range)
+    event_detection_parameters = CustomEventDetectionParameters(ap.detect_peaks_in_spectrogram, mean_lag_window_size, std_lag_window_size, mean_influence, std_influence, threshold)
     clustering_parameters = CustomClusteringParameters(ap.cluster_audio_events, min_cluster_size)
     event_processing_parameters = CustomEventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
 

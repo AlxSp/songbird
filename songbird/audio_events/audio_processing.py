@@ -1,5 +1,7 @@
+import torchaudio
+import torch
 import librosa
-import librosa.display
+#import librosa.display
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.patches as patches
@@ -48,8 +50,8 @@ def getZScoreParameters():
     return AudioConversionParameters, EventDetectionParameters, ClusteringParameters, EventProcessingParameters, AdditionalParameters
 
 CustomAudioConversionParameters = namedtuple('CustomAudioConversionParameters', [ 'sample_rate', 'window_size', 'step_size', 'max_frequency', 'min_frequency'])
-CustomAudioProcessingParameters = namedtuple('CustomAudioProcessingParameters', ['fn_process_spectogram', 'relevant_freq_range'])
-CustomEventDetectionParameters = namedtuple('CustomEventDetectionParameters', ['fn_detect_peaks_in_spectogram', 'mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
+CustomAudioProcessingParameters = namedtuple('CustomAudioProcessingParameters', ['fn_process_spectrogram', 'relevant_freq_range'])
+CustomEventDetectionParameters = namedtuple('CustomEventDetectionParameters', ['fn_detect_peaks_in_spectrogram', 'mean_lag_window_size', 'std_lag_window_size', 'mean_influence', 'std_influence', 'threshold'])
 CustomClusteringParameters = namedtuple('CustomClusteringParameters', ['fn_cluster_audio_events', 'min_cluster_size'])
 CustomEventProcessingParameters = namedtuple('CustomEventProcessingParameters', ['event_distance_max', 'event_freq_differnce_max', 'event_length_min', 'start_buffer_len', 'end_buffer_len'])
 AdditionalParameters = namedtuple('AdditionalParameters', 'generate_process_plots')
@@ -108,6 +110,21 @@ def load_audio_events(sample_id):
 ######################################################################################################################
 # Time Series to Spectogram ##########################################################################################
 
+def create_spectrogram(sample, window_size, step_size, sample_rate, reference_power = None):
+    #create time series frames
+    time_series_frames = get_even_time_series_frames(sample, window_size, step_size)
+    #apply taper function to each frame
+    apply_hanning_window(time_series_frames)
+    #calculate the power spectrum
+    power_frames = calculate_power_spectrum(time_series_frames, window_size)
+    #get the frequency bins from for the window size
+    rfft_bin_freq = get_frequency_bins(window_size, sample_rate)
+    #convert power spectrogram to decibel units
+    #db_frames =  librosa.power_to_db(power_frames, ref=1)
+    db_frames = torchaudio.transforms.AmplitudeToDB('power', top_db=80)(torch.tensor(power_frames))
+
+    return db_frames, rfft_bin_freq
+
 #split a time series into multiple frames given a window size and step size
 def get_even_time_series_frames(time_series : np.array, window_size : int, step_size : int):
     #calculate number of frames (has to be an even number?)
@@ -146,6 +163,42 @@ def trim_to_frequency_range(frames, fft_bin_freq, max_freq, min_freq = 0):
 # Peak Detection #####################################################################################################
 
 nb.jit('float64[:](float64[:], int, int, float32, float32, float32)', nopython=True, parallel=True)
+def continuous_auxiliary_z_peak_detection(time_series : np.array, mean_lag_window : np.array, std_lag_window : np.array, mean_influence : float, std_influence : float, threshold : float):
+    signal_peaks = np.zeros((time_series.shape))
+
+    lag_window_mean = np.mean(mean_lag_window)
+    lag_window_std = np.std(std_lag_window)
+
+    for i in range(0, len(time_series)):
+        mean_lag_window = np.roll(mean_lag_window, -1)
+        std_lag_window = np.roll(std_lag_window, -1)
+
+        if abs(time_series[i] - lag_window_mean) > threshold * lag_window_std:
+            if time_series[i] > lag_window_mean: #check for positive or negative peak
+                signal_peaks[i] = 1
+            else:
+                signal_peaks[i] = -1
+
+            mean_lag_window[-1] = mean_influence * time_series[i] + (1 - mean_influence) * mean_lag_window[-2]            
+            std_lag_window[-1] = std_influence * time_series[i] + (1 - std_influence) * std_lag_window[-2]            
+        else:
+            mean_lag_window[-1] = time_series[i]            
+            std_lag_window[-1] = time_series[i]
+
+        lag_window_mean = np.mean(mean_lag_window)            
+
+    return signal_peaks, mean_lag_window, std_lag_window
+
+nb.jit('float64[:,:](float64[:,:], float64[:,:], float64[:,:], float32, float32, float32)', nopython=True, parallel=True)
+def continuous_auxiliary_z_score_peak_detection_2D(spectrogram : np.array, mean_lag_matrix : np.array, std_lag_matrix : np.array, mean_influence : float, std_influence : float, threshold : float):
+    signal_peaks_matrix = np.zeros(spectrogram.shape)
+    
+    for freq_index in nb.prange(spectrogram.shape[0]):
+        signal_peaks_matrix[freq_index], mean_lag_matrix[freq_index], std_lag_matrix[freq_index] = continuous_auxiliary_z_peak_detection(spectrogram[freq_index,:], mean_lag_matrix[freq_index,:], std_lag_matrix[freq_index,:], mean_influence, std_influence, threshold)           
+
+    return signal_peaks_matrix
+
+nb.jit('float64[:](float64[:], int, int, float32, float32, float32)', nopython=True, parallel=True)
 def auxiliary_z_peak_detection(time_series : np.array, mean_lag : int, std_lag : int, mean_influence : float, std_influence : float, threshold : float):
     signal_peaks = np.zeros((time_series.shape))
     max_lag_length = mean_lag if mean_lag > std_lag else std_lag #fing the larger lag
@@ -175,13 +228,12 @@ def auxiliary_z_peak_detection(time_series : np.array, mean_lag : int, std_lag :
 
     return signal_peaks
 
-# %%
 nb.jit('float64[:,:](float64[:,:], int, int, float32, float32, float32)', nopython=True, parallel=True)
-def auxiliary_z_score_peak_detection_2D(spectogram : np.array, mean_lag : int, std_lag : int, mean_influence : float, std_influence : float, threshold : float):
-    signal_peaks_matrix = np.zeros(spectogram.shape)
+def auxiliary_z_score_peak_detection_2D(spectrogram : np.array, mean_lag : int, std_lag : int, mean_influence : float, std_influence : float, threshold : float):
+    signal_peaks_matrix = np.zeros(spectrogram.shape)
     
-    for freq_index in nb.prange(spectogram.shape[0]):
-        signal_peaks_matrix[freq_index] = auxiliary_z_peak_detection(spectogram[freq_index,:], mean_lag, std_lag, mean_influence, std_influence, threshold)           
+    for freq_index in nb.prange(spectrogram.shape[0]):
+        signal_peaks_matrix[freq_index] = auxiliary_z_peak_detection(spectrogram[freq_index,:], mean_lag, std_lag, mean_influence, std_influence, threshold)           
 
     return signal_peaks_matrix
 
@@ -206,13 +258,13 @@ def get_cluster_scope(cluster_coordinates):
 
 def get_audio_event_scopes_from_hdbscan(peak_coordinates, min_cluster_size):
     clusterer = hdbscan.HDBSCAN(min_cluster_size = min_cluster_size).fit(peak_coordinates)
-    clusters_coordinates = [[] for i in range(len(set(clusterer.labels_)) - 1)]
+    clusters_coordinates = [[] for _ in range(len(set(clusterer.labels_)))]
 
     for index, cluster_index in enumerate(clusterer.labels_):
         if cluster_index != -1:
             clusters_coordinates[cluster_index].append(peak_coordinates[index])
 
-    cluster_scopes = np.array([np.asarray(get_cluster_scope(np.array(coordinates))) for coordinates in clusters_coordinates])
+    cluster_scopes = np.array([np.asarray(get_cluster_scope(np.array(coordinates))) for coordinates in clusters_coordinates if coordinates])
 
     return  cluster_scopes, clusterer
 
@@ -265,11 +317,11 @@ def audio_events_to_csv(events, sample_id):
 ######################################################################################################################
 # plotting ###########################################################################################################
 
-def save_spectogram_plot(spectogram_matrix, sample_rate, step_size, sample_id, title = 'Spectrogram', x_label = None, y_labels = None, y_tick_num = 6, audio_events = []):
+def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, sample_id, title = 'Spectrogram', x_label = None, y_labels = None, y_tick_num = 6, audio_events = []):
     f = plt.figure(figsize=(10,5), dpi= 80)
     ax = f.add_subplot()
     ax.set_title(title) #set title 
-    spectogram = ax.matshow(spectogram_matrix, aspect="auto", cmap=plt.get_cmap('magma')) #draw matrix with colormap 'magma'
+    spectrogram = ax.matshow(spectrogram_matrix, aspect="auto", cmap=plt.get_cmap('magma')) #draw matrix with colormap 'magma'
 
     if audio_events:
         colors = cm.rainbow(np.linspace(0, 1, len(audio_events)))
@@ -279,8 +331,8 @@ def save_spectogram_plot(spectogram_matrix, sample_rate, step_size, sample_id, t
 
     ax.xaxis.set_ticks_position('bottom') #set x ticks to bottom of graph 
     ax.set_xlabel('Time (sec)')
-    locator_num = 16 if spectogram_matrix.shape[1] * step_size // sample_rate >= 16 else spectogram_matrix.shape[1] * step_size // sample_rate
-    ax.set_xlim(left = 0, right = spectogram_matrix.shape[1])
+    locator_num = 16 if spectrogram_matrix.shape[1] * step_size // sample_rate >= 16 else spectrogram_matrix.shape[1] * step_size // sample_rate
+    ax.set_xlim(left = 0, right = spectrogram_matrix.shape[1])
     ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
     formatter = ticker.FuncFormatter(lambda ms, x: time.strftime('%-S', time.gmtime(ms * step_size // sample_rate)))
     ax.xaxis.set_major_formatter(formatter)
@@ -292,7 +344,7 @@ def save_spectogram_plot(spectogram_matrix, sample_rate, step_size, sample_id, t
     ax.set_yticklabels(y_labels[0::y_tick_steps])
 
     plt.tight_layout()
-    plt.colorbar(spectogram, format='%+2.0f dB')
+    plt.colorbar(spectrogram, format='%+2.0f dB')
     plt.savefig(os.path.join(plots_path, str(sample_id), title + '.png'))
 
 
@@ -357,21 +409,12 @@ def show_amplitude_wave_plot(time_series, sample_rate):
 ######################################################################################################################
 # audio processing ###################################################################################################
 
-def create_spectogram(sample, window_size, step_size, sample_rate):
-    #create time series frames
-    time_series_frames = get_even_time_series_frames(sample, window_size, step_size)
-    #apply taper function to each frame
-    apply_hanning_window(time_series_frames)
-    #calculate the power spectrum
-    power_frames = calculate_power_spectrum(time_series_frames, window_size)
-    #get the frequency bins from for the window size
-    rfft_bin_freq = get_frequency_bins(window_size, sample_rate)
-    #convert power spectogram to decibel units
-    db_frames = librosa.power_to_db(power_frames, ref=np.max)
+def normalize(tensor):
+    # Subtract the mean, and scale to the interval [-1,1]
+    tensor_minusmean = tensor - tensor.mean()
+    return tensor_minusmean/np.amax(np.abs(tensor_minusmean))
 
-    return db_frames, rfft_bin_freq
-
-def process_spectogram(db_frames, rfft_bin_freq, audio_processing_parameters):
+def process_spectrogram(db_frames, rfft_bin_freq, audio_processing_parameters):
     #test #######
     relevant_freq_range = audio_processing_parameters.relevant_freq_range #always use uneven number
     time_dim = db_frames.shape[0]
@@ -386,14 +429,24 @@ def process_spectogram(db_frames, rfft_bin_freq, audio_processing_parameters):
 
     return accumulated_frames, rfft_bin_freq[freq_padding:freq_dim - freq_padding]
 
-def detect_peaks_in_spectogram(spectrogram, event_detection_parameters):
-    spectogram_peaks = auxiliary_z_score_peak_detection_2D(spectrogram, event_detection_parameters.mean_lag_window_size, event_detection_parameters.std_lag_window_size, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
+def detect_peaks_in_spectrogram(spectrogram, event_detection_parameters):
+    spectrogram_peaks = auxiliary_z_score_peak_detection_2D(spectrogram, event_detection_parameters.mean_lag_window_size, event_detection_parameters.std_lag_window_size, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
     #remove negative peaks
-    return np.clip(spectogram_peaks, 0, 1)
+    return np.clip(spectrogram_peaks, 0, 1)
 
-def cluster_audio_events(spectogram_peaks, clustering_parameters):
+def cluster_audio_events_from_coordinates(peak_coordinates, clustering_parameters):
+    #group single peaks into audio events
+    audio_event_index_scopes, clusterer = get_audio_event_scopes_from_hdbscan(peak_coordinates, clustering_parameters.min_cluster_size)
+
+    #sort audio events by their occurrence 
+    audio_event_index_scopes = sorted(audio_event_index_scopes, key = lambda x: x[1])
+    #process audio events
+    return audio_event_index_scopes, peak_coordinates, clusterer
+
+
+def cluster_audio_events(spectrogram_peaks, clustering_parameters):
     #get peak coordinates
-    peak_coordinates = np.array(np.where(spectogram_peaks == 1)).T
+    peak_coordinates = np.array(np.where(spectrogram_peaks == 1)).T
     #group single peaks into audio events
     audio_event_index_scopes, clusterer = get_audio_event_scopes_from_hdbscan(peak_coordinates, clustering_parameters.min_cluster_size)
 
@@ -443,6 +496,60 @@ def detect_audio_events_in_sample( process_function,
 
     audio_events_to_csv(audio_events, sample_id)
 
+def detect_audio_events_with_custom_chunked(
+    sample_id, 
+    audio_conversion_parameters, 
+    audio_processing_parameters,
+    event_detection_parameters, 
+    clustering_parameters, 
+    event_processing_parameters, 
+    additional_parameters ):
+    
+
+    #load sample as time series array
+    sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.sample_rate)
+
+    chunk_size = 44100 * 10
+
+    for chunk_index in range(0, len(sample), chunk_size):
+
+        audio_chunk = sample[chunk_index: chunk_index + chunk_size]
+
+        db_spectrogram, rfft_bin_freq = create_spectrogram(audio_chunk, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
+        #trim the spectrogram to a specified frequency range
+        db_spectrogram, rfft_bin_freq = trim_to_frequency_range(db_spectrogram, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
+
+        if additional_parameters.generate_process_plots:    #save the decibel spectrogram
+            save_spectrogram_plot(np.array(db_spectrogram).T, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+
+        db_spectrogram, rfft_bin_freq = audio_processing_parameters.fn_process_spectrogram(db_spectrogram, rfft_bin_freq, audio_processing_parameters)    
+
+        transposed_db_spectrogram = np.array(db_spectrogram).T #transpose spectrogram frames dimension from (time_step, frequency) to (frequency, time_step)
+
+        if additional_parameters.generate_process_plots:    #save the decibel spectrogram
+            save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Post processing Spectogram (Decibel)", y_labels = rfft_bin_freq)
+
+        #detect peaks in spectrogram
+        spectrogram_peaks = event_detection_parameters.fn_detect_peaks_in_spectrogram(transposed_db_spectrogram, event_detection_parameters)
+
+        if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
+            save_spectrogram_plot(spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+
+        #accumulate individual audio peaks to sound events
+        audio_event_index_scopes, peak_coordinates, clusterer = clustering_parameters.fn_cluster_audio_events(spectrogram_peaks, clustering_parameters)
+
+        if additional_parameters.generate_process_plots: #save cluster plot
+            save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
+
+    audio_event_index_scopes = concatenate_events(audio_event_index_scopes, event_processing_parameters)
+
+    if additional_parameters.generate_process_plots: #save the decibel spectrogram with audio event boxes
+        save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
+    #convert audio event index scopes to audio events with time and frequency scopes
+    audio_events = index_scopes_to_unit_scopes(audio_event_index_scopes, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, rfft_bin_freq)
+    #save events
+    return audio_events
+
 def detect_audio_events_with_custom(
     sample_id, 
     audio_conversion_parameters, 
@@ -455,38 +562,149 @@ def detect_audio_events_with_custom(
     #load sample as time series array
     sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.sample_rate)
 
-    db_frames, rfft_bin_freq = create_spectogram(sample, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
-    #trim the spectogram to a specified frequency range
+    sample = normalize(sample)
+
+    db_frames, rfft_bin_freq = create_spectrogram(sample, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
+    #trim the spectrogram to a specified frequency range
     db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
 
-    if additional_parameters.generate_process_plots:    #save the decibel spectogram
-        save_spectogram_plot(np.array(db_frames).T, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+    if additional_parameters.generate_process_plots:    #save the decibel spectrogram
+        save_spectrogram_plot(np.array(db_frames).T, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
 
-    db_frames, rfft_bin_freq = audio_processing_parameters.fn_process_spectogram(db_frames, rfft_bin_freq, audio_processing_parameters)    
+    db_frames, rfft_bin_freq = audio_processing_parameters.fn_process_spectrogram(db_frames, rfft_bin_freq, audio_processing_parameters)    
 
-    transposed_db_spectogram = np.array(db_frames).T #transpose spectogram frames dimension from (time_step, frequency) to (frequency, time_step)
+    transposed_db_spectrogram = np.array(db_frames).T #transpose spectrogram frames dimension from (time_step, frequency) to (frequency, time_step)
 
-    if additional_parameters.generate_process_plots:    #save the decibel spectogram
-        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Post processing Spectogram (Decibel)", y_labels = rfft_bin_freq)
+    if additional_parameters.generate_process_plots:    #save the decibel spectrogram
+        save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Post processing Spectogram (Decibel)", y_labels = rfft_bin_freq)
 
-    #detect peaks in spectogram
-    spectogram_peaks = event_detection_parameters.fn_detect_peaks_in_spectogram(transposed_db_spectogram, event_detection_parameters)
+    #detect peaks in spectrogram
+    spectrogram_peaks = event_detection_parameters.fn_detect_peaks_in_spectrogram(transposed_db_spectrogram, event_detection_parameters)
 
-    if additional_parameters.generate_process_plots: #save_spectogram_peaks()
-        save_spectogram_plot(spectogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+    if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
+        save_spectrogram_plot(spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
 
     #accumulate individual audio peaks to sound events
-    audio_event_index_scopes, peak_coordinates, clusterer = clustering_parameters.fn_cluster_audio_events(spectogram_peaks, clustering_parameters)
+    audio_event_index_scopes, peak_coordinates, clusterer = clustering_parameters.fn_cluster_audio_events(spectrogram_peaks, clustering_parameters)
 
     if additional_parameters.generate_process_plots: #save cluster plot
-        save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectogram_peaks.shape[1], spectogram_peaks.shape[0], rfft_bin_freq,)
+        save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
 
     audio_event_index_scopes = concatenate_events(audio_event_index_scopes, event_processing_parameters)
 
-    if additional_parameters.generate_process_plots: #save the decibel spectogram with audio event boxes
-        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
+    if additional_parameters.generate_process_plots: #save the decibel spectrogram with audio event boxes
+        save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
     #convert audio event index scopes to audio events with time and frequency scopes
     audio_events = index_scopes_to_unit_scopes(audio_event_index_scopes, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, rfft_bin_freq)
+    #save events
+    return audio_events
+
+
+def detect_audio_events_with_zscore_chunked(
+    sample_id, 
+    audio_conversion_parameters, 
+    event_detection_parameters, 
+    clustering_parameters, 
+    event_processing_parameters, 
+    additional_parameters ):
+
+    #load sample as time series array
+    sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.sample_rate)
+
+    sample = normalize(sample)
+
+    chunk_size = audio_conversion_parameters.sample_rate * audio_conversion_parameters.chunk_len_sec #seconds
+
+    mean_lag_length = event_detection_parameters.mean_lag_window_size
+    std_lag_length = event_detection_parameters.std_lag_window_size
+    max_lag_length = mean_lag_length if mean_lag_length > std_lag_length else std_lag_length #fing the larger lag
+
+    if max_lag_length >= chunk_size:
+        raise Exception(f"Chunk size '{chunk_size}' is not large enough for the maximum lag length {max_lag_length}")
+
+    print(f"Total sample len: {len(sample)} vs chunk size: {chunk_size} ")
+
+    #get the windows for mean and std 
+    mean_window_matrix = None
+    std_window_matrix = None
+
+    all_audio_event_index_scopes = []
+
+    is_first_chunk = True
+
+    full_spectrogram = None
+
+    total_frame_num = 0
+
+    for chunk_index in range(0, len(sample), chunk_size):
+
+        audio_chunk = sample[chunk_index: chunk_index + chunk_size]
+
+        db_frames, rfft_bin_freq = create_spectrogram(audio_chunk, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
+        #trim the spectrogram to a specified frequency range
+        db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
+
+        frame_len = len(db_frames)
+        #db_frames = process_spectrogram(db_frames)    
+
+        transposed_db_spectrogram = np.array(db_frames).T #transpose spectrogram frames dimension from (time_step, frequency) to (frequency, time_step)
+
+        if additional_parameters.generate_process_plots:    #save the decibel spectrogram
+            save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+
+        if is_first_chunk:
+            is_first_chunk = False
+            mean_window_matrix = np.copy(transposed_db_spectrogram[:,max_lag_length - mean_lag_length : max_lag_length])
+            std_window_matrix = np.copy(transposed_db_spectrogram[:,max_lag_length - std_lag_length : max_lag_length])
+            full_spectrogram = transposed_db_spectrogram
+            transposed_db_spectrogram = transposed_db_spectrogram[:, max_lag_length:]
+        
+        elif additional_parameters.generate_process_plots:
+            full_spectrogram = np.hstack((full_spectrogram, transposed_db_spectrogram))
+            max_lag_length = 0
+
+        else:
+            max_lag_length = 0
+        
+        #detect peaks in spectrogram
+        spectrogram_peaks = continuous_auxiliary_z_score_peak_detection_2D(transposed_db_spectrogram, mean_window_matrix, std_window_matrix, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
+        spectrogram_peaks = np.clip(spectrogram_peaks, 0, 1)
+
+        if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
+            save_spectrogram_plot(spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+
+        #get peak coordinates
+        peak_coordinates = np.array(np.where(spectrogram_peaks == 1)).T
+
+
+        peak_coordinates[:, 1] = peak_coordinates[:, 1] + total_frame_num + max_lag_length
+
+        #accumulate individual audio peaks to sound events
+        audio_event_index_scopes, peak_coordinates, clusterer = cluster_audio_events_from_coordinates(peak_coordinates, clustering_parameters)
+
+        all_audio_event_index_scopes += audio_event_index_scopes
+
+
+        total_frame_num += frame_len
+        # if additional_parameters.generate_process_plots: #save cluster plot
+        #     readjusted_peak_coordinates = np.copy(peak_coordinates)
+        #     readjusted_peak_coordinates[:, 1] = readjusted_peak_coordinates[:, 1] - chunk_index - max_lag_length
+        #     save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
+
+    if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
+        all_spectrogram_peaks = np.zeros(full_spectrogram.shape)
+            
+
+        save_spectrogram_plot(all_spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+
+    all_audio_event_index_scopes = concatenate_events(all_audio_event_index_scopes, event_processing_parameters)
+
+    
+    if additional_parameters.generate_process_plots: #save the decibel spectrogram with audio event boxes
+        save_spectrogram_plot(full_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=all_audio_event_index_scopes)
+    
+    #convert audio event index scopes to audio events with time and frequency scopes
+    audio_events = index_scopes_to_unit_scopes(all_audio_event_index_scopes, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, rfft_bin_freq)
     #save events
     return audio_events
 
@@ -501,33 +719,33 @@ def detect_audio_events_with_zscore(
     #load sample as time series array
     sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.sample_rate)
 
-    db_frames, rfft_bin_freq = create_spectogram(sample, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
-    #trim the spectogram to a specified frequency range
+    db_frames, rfft_bin_freq = create_spectrogram(sample, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
+    #trim the spectrogram to a specified frequency range
     db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
 
-    #db_frames = process_spectogram(db_frames)    
+    #db_frames = process_spectrogram(db_frames)    
 
-    transposed_db_spectogram = np.array(db_frames).T #transpose spectogram frames dimension from (time_step, frequency) to (frequency, time_step)
+    transposed_db_spectrogram = np.array(db_frames).T #transpose spectrogram frames dimension from (time_step, frequency) to (frequency, time_step)
 
-    if additional_parameters.generate_process_plots:    #save the decibel spectogram
-        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+    if additional_parameters.generate_process_plots:    #save the decibel spectrogram
+        save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
 
-    #detect peaks in spectogram
-    spectogram_peaks = detect_peaks_in_spectogram(transposed_db_spectogram, event_detection_parameters)
+    #detect peaks in spectrogram
+    spectrogram_peaks = detect_peaks_in_spectrogram(transposed_db_spectrogram, event_detection_parameters)
 
-    if additional_parameters.generate_process_plots: #save_spectogram_peaks()
-        save_spectogram_plot(spectogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+    if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
+        save_spectrogram_plot(spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
 
     #accumulate individual audio peaks to sound events
-    audio_event_index_scopes, peak_coordinates, clusterer = cluster_audio_events(spectogram_peaks, clustering_parameters)
+    audio_event_index_scopes, peak_coordinates, clusterer = cluster_audio_events(spectrogram_peaks, clustering_parameters)
 
     if additional_parameters.generate_process_plots: #save cluster plot
-        save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectogram_peaks.shape[1], spectogram_peaks.shape[0], rfft_bin_freq,)
+        save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
 
     audio_event_index_scopes = concatenate_events(audio_event_index_scopes, event_processing_parameters)
     
-    if additional_parameters.generate_process_plots: #save the decibel spectogram with audio event boxes
-        save_spectogram_plot(transposed_db_spectogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
+    if additional_parameters.generate_process_plots: #save the decibel spectrogram with audio event boxes
+        save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram with Events", y_labels = rfft_bin_freq, audio_events=audio_event_index_scopes)
     
     #convert audio event index scopes to audio events with time and frequency scopes
     audio_events = index_scopes_to_unit_scopes(audio_event_index_scopes, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, rfft_bin_freq)
