@@ -5,6 +5,7 @@ import matplotlib.ticker as ticker
 import matplotlib.patches as patches
 import matplotlib.cm as cm
 import numpy as np
+import numba as nb
 import pandas as pd
 import math
 import os
@@ -144,6 +145,7 @@ def trim_to_frequency_range(frames, fft_bin_freq, max_freq, min_freq = 0):
 ######################################################################################################################
 # Peak Detection #####################################################################################################
 
+nb.jit('float64[:](float64[:], int, int, float32, float32, float32)', nopython=True, parallel=True)
 def auxiliary_z_peak_detection(time_series : np.array, mean_lag : int, std_lag : int, mean_influence : float, std_influence : float, threshold : float):
     signal_peaks = np.zeros((time_series.shape))
     max_lag_length = mean_lag if mean_lag > std_lag else std_lag #fing the larger lag
@@ -170,12 +172,18 @@ def auxiliary_z_peak_detection(time_series : np.array, mean_lag : int, std_lag :
             std_filtered_time_series_window[-1] = time_series[i]
 
         lag_window_mean = np.mean(mean_filtered_time_series_window)            
-        std_window_mean = np.std(std_filtered_time_series_window)
 
     return signal_peaks
 
-def auxiliary_z_score_peak_detection_2D(frequency_time_series : np.array, mean_lag : int, std_lag : int, mean_influence : float, std_influence : float, threshold : float):
-    return np.asarray([auxiliary_z_peak_detection(freq_series, mean_lag, std_lag, mean_influence, std_influence, threshold) for freq_series in frequency_time_series])
+# %%
+nb.jit('float64[:,:](float64[:,:], int, int, float32, float32, float32)', nopython=True, parallel=True)
+def auxiliary_z_score_peak_detection_2D(spectogram : np.array, mean_lag : int, std_lag : int, mean_influence : float, std_influence : float, threshold : float):
+    signal_peaks_matrix = np.zeros(spectogram.shape)
+    
+    for freq_index in nb.prange(spectogram.shape[0]):
+        signal_peaks_matrix[freq_index] = auxiliary_z_peak_detection(spectogram[freq_index,:], mean_lag, std_lag, mean_influence, std_influence, threshold)           
+
+    return signal_peaks_matrix
 
 # Peak Detection #####################################################################################################
 ######################################################################################################################

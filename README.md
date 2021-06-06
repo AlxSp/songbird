@@ -1,15 +1,8 @@
 # Songbird Project
 
 
-## Requirements 
+## Python Version Requirement 
 * Python 3.8+
-
-### Modules:
-* requests
-* librosa
-* matplotlib
-* numpy
-* pandas
 
 ## Setup: 
 
@@ -234,13 +227,13 @@ Dictionary in samples_metadata.json
 ```python
 sample_dict = {
     'gbifID' : int, #unique gbifID 
-    'recording_link' : string, #link to media
+    'recording_link' : str, #link to media
     'decimal_latitude' : float,
     'decimal_longitude': float,
     'date' : datetime_string,
-    'behavior' : [], # > array of strings 
+    'behavior' : str[], # > array of strings 
     'forefront' : int,
-    'background_birds' : [], # > array of species key ints 
+    'background_birds' : int[], # > array of species key ints 
 }
 ```
 ---
