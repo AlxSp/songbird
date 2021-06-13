@@ -1,3 +1,4 @@
+from torch._C import dtype
 import torchaudio
 import torch
 import librosa
@@ -253,8 +254,23 @@ class audio_event: #simple class for storing the indices of an audio event
     def get_values_as_array(self):
         return [self.start_sec, self.end_sec, self.max_freq, self.min_freq]
 
+
+def get_cluster_scopes(peak_coordinates, cluster_labels):
+    return np.asarray([ get_cluster_scope_arr(peak_coordinates[cluster_labels == label]) for label in np.unique(cluster_labels) ])
+
+
+def get_cluster_scope_arr(cluster_coordinates):
+    return np.asarray([np.min(cluster_coordinates[:,1]), np.max(cluster_coordinates[:,1]), np.min(cluster_coordinates[:,0]), np.max(cluster_coordinates[:,0])])
+
 def get_cluster_scope(cluster_coordinates):
     return np.min(cluster_coordinates[:,1]), np.max(cluster_coordinates[:,1]), np.min(cluster_coordinates[:,0]), np.max(cluster_coordinates[:,0])
+
+
+def get_audio_event_labels_from_hdbscan(peak_coordinates, min_cluster_size):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size = min_cluster_size).fit(peak_coordinates)
+
+    return np.asarray(clusterer.labels_), clusterer
+
 
 def get_audio_event_scopes_from_hdbscan(peak_coordinates, min_cluster_size):
     clusterer = hdbscan.HDBSCAN(min_cluster_size = min_cluster_size).fit(peak_coordinates)
@@ -277,10 +293,49 @@ def do_events_overlap(top_left_corner_1: tuple, bottom_right_corner_1: tuple, to
 
     return True
 
-def concatenate_events(event_arr, event_processing_parameters):
+def separate_peaks_for_further_processing(peak_coordinates, cluster_labels, distance_threshold, time_distance_max):
+    #get the cluster labels which coordinates fall within the threshold
+    cluster_labels_above_threshold = np.unique(cluster_labels[peak_coordinates[:,1] > (time_distance_max - distance_threshold)])
+    #get coordinates in threshold mask
+    peak_coordinates_to_process_mask = np.in1d(cluster_labels, cluster_labels_above_threshold)
+    #return the peak coordinates that 
+    return peak_coordinates[peak_coordinates_to_process_mask], peak_coordinates[~peak_coordinates_to_process_mask], cluster_labels[~peak_coordinates_to_process_mask]
+
+
+        
+
+
+def concatenate_events_chunk(event_arr, event_processing_parameters):
     '''
     event_arr has to be sorted sequentially by the start time of events
     '''
+    #sort audio events by their occurrence 
+    event_arr = sorted(event_arr, key = lambda x: x[1])
+
+    event_distance_max = event_processing_parameters.event_distance_max
+    event_freq_differnce_max = event_processing_parameters.event_freq_differnce_max
+    new_event_arr = [event_arr[0]]
+    for event in event_arr[1:]:
+        if do_events_overlap((event[0] - event_distance_max, event[3] + event_freq_differnce_max), (event[1], event[2] - event_freq_differnce_max),
+         (new_event_arr[-1][0], new_event_arr[-1][3]), (new_event_arr[-1][1], new_event_arr[-1][2])):
+            new_event_arr[-1][1] = event[1]
+            new_event_arr[-1][2] = min((event[2], new_event_arr[-1][2]))
+            new_event_arr[-1][3] = max((event[3], new_event_arr[-1][3]))
+
+        #if ((event_arr[i][0] - new_event_arr[-1][1]) < event_distance_max) :
+        #    new_event_arr[-1][1] = event_arr[i][1]
+        else:
+            new_event_arr.append(event)
+    return new_event_arr
+
+def concatenate_events(event_arr, event_processing_parameters):
+
+    '''
+    event_arr has to be sorted sequentially by the start time of events
+    '''
+    #sort audio events by their occurrence 
+    event_arr = sorted(event_arr, key = lambda x: x[1])
+
     event_distance_max = event_processing_parameters.event_distance_max
     event_freq_differnce_max = event_processing_parameters.event_freq_differnce_max
     new_event_arr = [event_arr[0]]
@@ -347,6 +402,43 @@ def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, sample_id,
     plt.colorbar(spectrogram, format='%+2.0f dB')
     plt.savefig(os.path.join(plots_path, str(sample_id), title + '.png'))
 
+def save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer_probabilities, sample_rate, step_size, sample_id, x_dim, y_dim, y_labels, y_tick_num = 6):
+    
+    def adjust_alpha(color, alpha):
+        color[-1] = alpha
+        return color
+
+    cluster_num = len(np.unique(cluster_labels))
+
+    cluster_colors = plt.cm.Spectral(np.linspace(0, 1, cluster_num))
+
+    colors = [cluster_colors[x] if x >= 0 else [0.5, 0.5, 0.5, 0.0] for x in cluster_labels]
+
+    colors_with_probs = [ adjust_alpha(x, p) for x, p in zip(colors, clusterer_probabilities)]
+
+    f = plt.figure(figsize=(10,5), dpi = 80)
+    ax = f.add_subplot()
+    ax.set_title(f"HDBScan number of clusters: {cluster_num}") #set title 
+    ax.set_facecolor('dimgray')
+    
+    ax.xaxis.set_ticks_position('bottom') #set x ticks to bottom of graph 
+    ax.set_xlabel('Time (sec)')
+    locator_num = 16 if x_dim * step_size // sample_rate >= 16 else x_dim * step_size // sample_rate
+    ax.set_xlim(left = 0, right = x_dim)
+    ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
+    formatter = ticker.FuncFormatter(lambda ms, x: time.strftime('%-S', time.gmtime(ms * step_size // sample_rate)))
+    ax.xaxis.set_major_formatter(formatter)
+
+    ax.set_ylabel('Hz')
+    ax.set_ylim(0, y_dim)
+    y_tick_steps = int(len(y_labels) / y_tick_num)
+    ax.set_yticks(np.arange(0, len(y_labels), y_tick_steps))
+    ax.set_yticklabels(y_labels[0::y_tick_steps])
+    scatter_plot = ax.scatter(peak_coordinates[:,1], peak_coordinates[:,0], s=2, linewidth=0, c=colors_with_probs)
+
+    plt.tight_layout()
+    plt.colorbar(scatter_plot)
+    plt.savefig(os.path.join(plots_path, str(sample_id), "Clusters.png"))
 
 def save_cluster_plot(peak_coordinates, sample_rate, step_size, clusterer, sample_id, x_dim, y_dim, y_labels, y_tick_num = 6,):
     def adjust_alpha(color, alpha):
@@ -438,8 +530,6 @@ def cluster_audio_events_from_coordinates(peak_coordinates, clustering_parameter
     #group single peaks into audio events
     audio_event_index_scopes, clusterer = get_audio_event_scopes_from_hdbscan(peak_coordinates, clustering_parameters.min_cluster_size)
 
-    #sort audio events by their occurrence 
-    audio_event_index_scopes = sorted(audio_event_index_scopes, key = lambda x: x[1])
     #process audio events
     return audio_event_index_scopes, peak_coordinates, clusterer
 
@@ -636,6 +726,8 @@ def detect_audio_events_with_zscore_chunked(
 
     total_frame_num = 0
 
+    carry_over_peak_coordinates = np.asarray([], dtype='int64')
+
     for chunk_index in range(0, len(sample), chunk_size):
 
         audio_chunk = sample[chunk_index: chunk_index + chunk_size]
@@ -645,7 +737,6 @@ def detect_audio_events_with_zscore_chunked(
         db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
 
         frame_len = len(db_frames)
-        #db_frames = process_spectrogram(db_frames)    
 
         transposed_db_spectrogram = np.array(db_frames).T #transpose spectrogram frames dimension from (time_step, frequency) to (frequency, time_step)
 
@@ -659,12 +750,11 @@ def detect_audio_events_with_zscore_chunked(
             full_spectrogram = transposed_db_spectrogram
             transposed_db_spectrogram = transposed_db_spectrogram[:, max_lag_length:]
         
-        elif additional_parameters.generate_process_plots:
-            full_spectrogram = np.hstack((full_spectrogram, transposed_db_spectrogram))
-            max_lag_length = 0
-
         else:
             max_lag_length = 0
+            
+            if additional_parameters.generate_process_plots:
+                full_spectrogram = np.hstack((full_spectrogram, transposed_db_spectrogram))
         
         #detect peaks in spectrogram
         spectrogram_peaks = continuous_auxiliary_z_score_peak_detection_2D(transposed_db_spectrogram, mean_window_matrix, std_window_matrix, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
@@ -676,28 +766,37 @@ def detect_audio_events_with_zscore_chunked(
         #get peak coordinates
         peak_coordinates = np.array(np.where(spectrogram_peaks == 1)).T
 
-
         peak_coordinates[:, 1] = peak_coordinates[:, 1] + total_frame_num + max_lag_length
 
-        #accumulate individual audio peaks to sound events
-        audio_event_index_scopes, peak_coordinates, clusterer = cluster_audio_events_from_coordinates(peak_coordinates, clustering_parameters)
+        if len(carry_over_peak_coordinates) > 0:
+            peak_coordinates = np.append(peak_coordinates, carry_over_peak_coordinates, axis=0) #add the array of peak coordinates that were carried over by the last chunk
 
-        all_audio_event_index_scopes += audio_event_index_scopes
+        cluster_labels, clusterer = get_audio_event_labels_from_hdbscan(peak_coordinates, clustering_parameters.min_cluster_size)
 
+        # remove peaks that do not belong to a cluster (label -1)
+        cluster_mask = cluster_labels >= 0
+        peak_coordinates = peak_coordinates[cluster_mask] 
+        cluster_labels = cluster_labels[cluster_mask]
 
-        total_frame_num += frame_len
-        # if additional_parameters.generate_process_plots: #save cluster plot
-        #     readjusted_peak_coordinates = np.copy(peak_coordinates)
-        #     readjusted_peak_coordinates[:, 1] = readjusted_peak_coordinates[:, 1] - chunk_index - max_lag_length
-        #     save_cluster_plot(peak_coordinates, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, clusterer, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
+        peak_coordinates_to_process, peak_coordinates_to_store, cluster_labels_to_store = separate_peaks_for_further_processing(peak_coordinates, cluster_labels, 10, total_frame_num + max_lag_length + frame_len)
+
+        carry_over_peak_coordinates = peak_coordinates_to_process
+
+        audio_event_index_scopes = get_cluster_scopes(peak_coordinates_to_store, cluster_labels_to_store)
+
+        if additional_parameters.generate_process_plots: #save cluster plot
+            readjusted_peak_coordinates = np.copy(peak_coordinates_to_store)
+            readjusted_peak_coordinates[:, 1] = readjusted_peak_coordinates[:, 1] - chunk_index - max_lag_length
+            save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer.probabilities_[cluster_mask], audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
+
+        all_audio_event_index_scopes += concatenate_events(audio_event_index_scopes, event_processing_parameters)
+    
+        total_frame_num += frame_len #increase the size of of the total frame num
 
     if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
         all_spectrogram_peaks = np.zeros(full_spectrogram.shape)
             
-
         save_spectrogram_plot(all_spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
-
-    all_audio_event_index_scopes = concatenate_events(all_audio_event_index_scopes, event_processing_parameters)
 
     
     if additional_parameters.generate_process_plots: #save the decibel spectrogram with audio event boxes
