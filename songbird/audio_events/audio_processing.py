@@ -402,11 +402,14 @@ def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, sample_id,
     plt.colorbar(spectrogram, format='%+2.0f dB')
     plt.savefig(os.path.join(plots_path, str(sample_id), title + '.png'))
 
-def save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer_probabilities, sample_rate, step_size, sample_id, x_dim, y_dim, y_labels, y_tick_num = 6):
+def save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer_probabilities, sample_rate, step_size, sample_id, y_labels, y_tick_num = 6, title_prefix = ""):
     
     def adjust_alpha(color, alpha):
         color[-1] = alpha
         return color
+
+    x_dim = np.max(peak_coordinates) if len(peak_coordinates) > 0 else 1
+    y_dim = len(y_labels)
 
     cluster_num = len(np.unique(cluster_labels))
 
@@ -418,7 +421,7 @@ def save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer_probabi
 
     f = plt.figure(figsize=(10,5), dpi = 80)
     ax = f.add_subplot()
-    ax.set_title(f"HDBScan number of clusters: {cluster_num}") #set title 
+    ax.set_title(title_prefix + f"HDBScan number of clusters: {cluster_num}") #set title 
     ax.set_facecolor('dimgray')
     
     ax.xaxis.set_ticks_position('bottom') #set x ticks to bottom of graph 
@@ -699,9 +702,9 @@ def detect_audio_events_with_zscore_chunked(
     additional_parameters ):
 
     #load sample as time series array
-    sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.sample_rate)
+    audio_sample, _ = load_audio_sample(sample_id, audio_conversion_parameters.sample_rate)
 
-    sample = normalize(sample)
+    audio_sample = normalize(audio_sample)
 
     chunk_size = audio_conversion_parameters.sample_rate * audio_conversion_parameters.chunk_len_sec #seconds
 
@@ -712,7 +715,9 @@ def detect_audio_events_with_zscore_chunked(
     if max_lag_length >= chunk_size:
         raise Exception(f"Chunk size '{chunk_size}' is not large enough for the maximum lag length {max_lag_length}")
 
-    print(f"Total sample len: {len(sample)} vs chunk size: {chunk_size} ")
+    print(f"Total sample len: {len(audio_sample)} vs chunk size: {chunk_size} ")
+
+    carry_over_threshold = 10
 
     #get the windows for mean and std 
     mean_window_matrix = None
@@ -724,24 +729,31 @@ def detect_audio_events_with_zscore_chunked(
 
     full_spectrogram = None
 
-    total_frame_num = 0
+    total_frame_len = 0
 
     carry_over_peak_coordinates = np.asarray([], dtype='int64')
 
-    for chunk_index in range(0, len(sample), chunk_size):
-
-        audio_chunk = sample[chunk_index: chunk_index + chunk_size]
-
+    chunk_count = 0
+    for chunk_index in range(0, len(audio_sample), chunk_size):
+        print(f"chunk: {chunk_count}")
+        audio_chunk = audio_sample[chunk_index: chunk_index + chunk_size]
+        
+        start_time = time.time()
+        
         db_frames, rfft_bin_freq = create_spectrogram(audio_chunk, audio_conversion_parameters.window_size, audio_conversion_parameters.step_size, audio_conversion_parameters.sample_rate)
         #trim the spectrogram to a specified frequency range
         db_frames, rfft_bin_freq = trim_to_frequency_range(db_frames, rfft_bin_freq, audio_conversion_parameters.max_frequency, audio_conversion_parameters.min_frequency)
 
         frame_len = len(db_frames)
-
+        print(db_frames.shape)
+        print(f"chunk size: {chunk_size} frame_len: {frame_len}")
         transposed_db_spectrogram = np.array(db_frames).T #transpose spectrogram frames dimension from (time_step, frequency) to (frequency, time_step)
-
+        
+        end_time = time.time()
+        print(f"Spectogram creation time: {end_time - start_time:.3f} sec")
+        
         if additional_parameters.generate_process_plots:    #save the decibel spectrogram
-            save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram (Decibel)", y_labels = rfft_bin_freq)
+            save_spectrogram_plot(transposed_db_spectrogram, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = f"Chunk: {chunk_count} Spectogram (Decibel)", y_labels = rfft_bin_freq)
 
         if is_first_chunk:
             is_first_chunk = False
@@ -756,20 +768,28 @@ def detect_audio_events_with_zscore_chunked(
             if additional_parameters.generate_process_plots:
                 full_spectrogram = np.hstack((full_spectrogram, transposed_db_spectrogram))
         
+        start_time = time.time()
+
         #detect peaks in spectrogram
         spectrogram_peaks = continuous_auxiliary_z_score_peak_detection_2D(transposed_db_spectrogram, mean_window_matrix, std_window_matrix, event_detection_parameters.mean_influence, event_detection_parameters.std_influence, event_detection_parameters.threshold)
         spectrogram_peaks = np.clip(spectrogram_peaks, 0, 1)
 
         if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
-            save_spectrogram_plot(spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+            save_spectrogram_plot(spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = f"Chunk: {chunk_count} Spectogram Peaks", y_labels = rfft_bin_freq)
 
         #get peak coordinates
         peak_coordinates = np.array(np.where(spectrogram_peaks == 1)).T
 
-        peak_coordinates[:, 1] = peak_coordinates[:, 1] + total_frame_num + max_lag_length
+        peak_coordinates[:, 1] = peak_coordinates[:, 1] + total_frame_len + max_lag_length
 
         if len(carry_over_peak_coordinates) > 0:
             peak_coordinates = np.append(peak_coordinates, carry_over_peak_coordinates, axis=0) #add the array of peak coordinates that were carried over by the last chunk
+
+        end_time = time.time()
+        print(f"Peak detection time: {end_time - start_time:.3f} sec")
+
+
+        start_time = time.time()
 
         cluster_labels, clusterer = get_audio_event_labels_from_hdbscan(peak_coordinates, clustering_parameters.min_cluster_size)
 
@@ -778,25 +798,35 @@ def detect_audio_events_with_zscore_chunked(
         peak_coordinates = peak_coordinates[cluster_mask] 
         cluster_labels = cluster_labels[cluster_mask]
 
-        peak_coordinates_to_process, peak_coordinates_to_store, cluster_labels_to_store = separate_peaks_for_further_processing(peak_coordinates, cluster_labels, 10, total_frame_num + max_lag_length + frame_len)
+        peak_coordinates_to_process, peak_coordinates_to_store, cluster_labels_to_store = separate_peaks_for_further_processing(peak_coordinates, cluster_labels, carry_over_threshold, total_frame_len + max_lag_length + frame_len)
 
         carry_over_peak_coordinates = peak_coordinates_to_process
+        if len(carry_over_peak_coordinates):
+            print("Carrying over coordinates")
+        
+        print(f"Farthest Coord: {np.max(peak_coordinates[:,1])} Start Index: {total_frame_len + max_lag_length}  End Index: {total_frame_len + max_lag_length + frame_len} Threshold: {carry_over_threshold}")
+        print(np.any(peak_coordinates[:,1] > (total_frame_len + max_lag_length + frame_len - carry_over_threshold)))
 
         audio_event_index_scopes = get_cluster_scopes(peak_coordinates_to_store, cluster_labels_to_store)
 
         if additional_parameters.generate_process_plots: #save cluster plot
             readjusted_peak_coordinates = np.copy(peak_coordinates_to_store)
-            readjusted_peak_coordinates[:, 1] = readjusted_peak_coordinates[:, 1] - chunk_index - max_lag_length
-            save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer.probabilities_[cluster_mask], audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, spectrogram_peaks.shape[1], spectrogram_peaks.shape[0], rfft_bin_freq,)
+            readjusted_peak_coordinates[:, 1] = readjusted_peak_coordinates[:, 1] - total_frame_len - max_lag_length
+            save_cluster_plot_simple(peak_coordinates, cluster_labels, clusterer.probabilities_[cluster_mask], audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, rfft_bin_freq, title_prefix = f"Chunk: {chunk_count} ")
 
         all_audio_event_index_scopes += concatenate_events(audio_event_index_scopes, event_processing_parameters)
-    
-        total_frame_num += frame_len #increase the size of of the total frame num
 
-    if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
-        all_spectrogram_peaks = np.zeros(full_spectrogram.shape)
-            
-        save_spectrogram_plot(all_spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = "Spectogram Peaks", y_labels = rfft_bin_freq)
+        end_time = time.time()
+        print(f"Cluster and event creation time: {end_time - start_time:.3f} sec")
+
+
+        total_frame_len += frame_len + max_lag_length #increase the size of of the total frame num
+        chunk_count += 1
+
+    # if additional_parameters.generate_process_plots: #save_spectrogram_peaks()
+    #     all_spectrogram_peaks = np.zeros(full_spectrogram.shape)
+        
+    #     save_spectrogram_plot(all_spectrogram_peaks, audio_conversion_parameters.sample_rate, audio_conversion_parameters.step_size, sample_id, title = f"Chunk: {chunk_count} Spectogram Peaks", y_labels = rfft_bin_freq)
 
     
     if additional_parameters.generate_process_plots: #save the decibel spectrogram with audio event boxes

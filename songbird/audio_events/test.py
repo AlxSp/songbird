@@ -58,10 +58,10 @@ def standard_function():
     ap.detect_audio_events_with_custom(2243804495, audio_conversion_parameters, audio_processing_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
 #%%
 
-start_time = time.time()
-standard_function()
-end_time = time.time()
-print(f"standard fn runtime: {end_time-start_time}s")
+# start_time = time.time()
+# standard_function()
+# end_time = time.time()
+# print(f"standard fn runtime: {end_time-start_time}s")
 
 #%%
 def detect_peaks_in_spectrogram(spectrogram, event_detection_parameters):
