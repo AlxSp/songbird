@@ -194,8 +194,8 @@ def numba_function():
     clustering_parameters = CustomClusteringParameters(ap.cluster_audio_events, min_cluster_size)
     event_processing_parameters = CustomEventProcessingParameters(event_distance_max, event_freq_differnce_max, event_length_min, start_buffer_len, end_buffer_len)
     additional_parameters = AdditionalParameters(True)
-
-    ap.detect_audio_events_with_zscore_chunked(2243804495, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
+    #2243804495
+    ap.detect_audio_events_with_zscore_chunked(2243890931, audio_conversion_parameters, event_detection_parameters, clustering_parameters, event_processing_parameters, additional_parameters)
 
 #%%
 start_time = time.time()
