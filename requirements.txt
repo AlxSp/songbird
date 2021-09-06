@@ -8,6 +8,7 @@ numba
 hdbscan
 pandas
 jupyter
+pydub
 torch
 torchvision
 torchaudio

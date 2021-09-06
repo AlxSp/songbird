@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 import datetime
+import time
 import argparse
 import os
 import requests
@@ -77,7 +78,7 @@ def filter_species_samples(species_sample_ids : dict, include_background_samples
 
     return species_sample_ids, sample_ids_to_download
     
-def download_by_sample_ids(sample_ids : list, samples_metadata : dict, destination_path):
+def download_by_sample_ids(sample_ids : list, samples_metadata : dict, destination_path, download_delay_sec = 0.0):
     progress_bar = ProgressBar(len(sample_ids))
     
     failed_to_download_sample_ids = []
@@ -109,6 +110,7 @@ def download_by_sample_ids(sample_ids : list, samples_metadata : dict, destinati
         if download_error:
             failed_to_download_sample_ids.append(sample_id)
         
+        time.sleep(download_delay_sec)
         progress_bar.progress()
         progress_bar.print()
 
@@ -384,6 +386,10 @@ if __name__ == "__main__":
     parser.add_argument('--reset_download_dir', required=False, action='store_true',
                             help =  'If this argument is given, the **data/raw/** directory will be \
                                     completely emptied before samples are downloaded. And the download_species_sample_info.json file will be removed')
+    
+    parser.add_argument('--download_delay', type=float, required=False, default=0,
+                            help =  'Set a delay in seconds between downloads to minimize server load')
+
     args = parser.parse_args()
 
     raw_data_path = os.path.join(data_dir, 'raw') # global variable that holds the path to the raw downloads directory
@@ -425,7 +431,7 @@ if __name__ == "__main__":
 
     print("A total of {} new samples will be downloaded".format(len(sample_ids_to_download)))
 
-    failed_to_download_sample_ids = download_by_sample_ids(sample_ids_to_download, samples_metadata_dict, raw_data_path) #down load sample ids
+    failed_to_download_sample_ids = download_by_sample_ids(sample_ids_to_download, samples_metadata_dict, raw_data_path, args.download_delay) #down load sample ids
     print()
     print("Completed downloading all samples")
 
