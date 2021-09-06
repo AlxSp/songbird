@@ -25,7 +25,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
-from torch.utils.data.dataset import random_split
+from torch.utils.tensorboard import SummaryWriter
 
 #%%
 class VariationalEncoder(nn.Module):
@@ -41,8 +41,8 @@ class VariationalEncoder(nn.Module):
         #self.conv1 = nn.Conv1d(1, 6, 3)
         #self.dense1 = nn.Linear(4410, 400) 
         
-        self.mean_dense = nn.Linear(8192, 64)
-        self.variance_dense = nn.Linear(8192, 64)
+        self.mean_dense = nn.Linear(2048, 128)
+        self.variance_dense = nn.Linear(2048, 128)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -75,7 +75,7 @@ class VariationalDecoder(nn.Module):
     def __init__(self):
         super(VariationalDecoder, self).__init__()
         
-        self.dense1 = nn.Linear(64, 8192)
+        self.dense1 = nn.Linear(64, 2048)
         self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv2 = nn.ConvTranspose2d(64, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv3 = nn.ConvTranspose2d(32, 16, kernel_size=5, stride=2, padding=2, output_padding=1)
@@ -87,7 +87,7 @@ class VariationalDecoder(nn.Module):
         # print(f"Input shape: {x.shape}")
         x =  F.relu(self.dense1(x))
         # print(f"Dense output shape: {x.shape}")
-        x = x.view(-1, 128, 4, 16)
+        x = x.view(-1, 128, 1, 16)
         # print(f"Reshape shape: {x.shape}")
         x = F.relu(self.conv1(x))
         # print(f"Conv 1 output shape: {x.shape}")
@@ -230,6 +230,7 @@ def create_spectrogram_slices(
         min_frequency, 
         img_dim, 
         img_step_size, 
+        event_padding_size,
         plot = False
     ):
     
@@ -258,12 +259,12 @@ def create_spectrogram_slices(
 
     spectrogram_img_arr = []
     
-    for audio_event in audio_events_arr:
-        event_length = audio_event.end_time_index - audio_event.start_time_index 
+    for audio_event in audio_events_arr: #iterate over all audio events
+        event_length = audio_event.end_time_index - audio_event.start_time_index    #length of the event
         #print(f"Original: {audio_event.start_time_index}, {audio_event.end_time_index}, {event_length}")
-        spectrogram_img = np.zeros(img_dim)
-        if event_length < img_dim[0]:
-            audio_event_middle_index = (event_length) // 2 + audio_event.start_time_index
+        spectrogram_img = np.zeros(img_dim) #create empty image
+        if event_length < img_dim[0]:   #if event is shorter than image, place it in the middle of the image
+            audio_event_middle_index = (event_length) // 2 + audio_event.start_time_index   #index of the middle of the event
             new_audio_event_start_index = audio_event_middle_index - img_dim[0] // 2
             new_audio_event_end_time_index = audio_event_middle_index + img_dim[0] // 2
 
@@ -289,14 +290,25 @@ def create_spectrogram_slices(
 
             spectrogram_img_arr.append(spectrogram_img)
 
-        elif event_length > img_dim[0]:
-            for start_index in range(audio_event.start_time_index, audio_event.start_time_index + event_length, img_step_size):
-                end_index = start_index + img_dim[0]
-                if end_index > audio_event.end_time_index:
-                    end_index = audio_event.end_time_index
-                    spectrogram_img[0:end_index-start_index,:] = cropped_spectrogram[start_index: end_index, :]
+        elif event_length > img_dim[0]: #if event is longer than image, slide a window over the spectrogram in the event range
+            
+            event_start_index = audio_event.start_time_index - event_padding_size   #index of the start of the event with sample padding
+            event_start_index = 0 if event_start_index < 0 else event_start_index   #set to zero if index is negative
+
+            event_end_index = audio_event.start_time_index + event_length + event_padding_size  #index of the end of the event with sample padding
+            event_end_index = spectrogram.shape[0] if event_end_index > spectrogram.shape[0] else event_end_index   #set to spectrogram length if index is greater than spectrogram length
+
+            for start_index in range(event_start_index, event_end_index, img_step_size):    #slide a window of img_dim size over the spectrogram
+                end_index = start_index + img_dim[0] #index of the end of the window
+                if end_index > event_end_index: #if the window is out of bounds, set it's to the end of the event
+                    noise_data = cropped_spectrogram[np.where(np.invert(mask))] #get the data that is hidden by the mask (expected to be noise)
+                    noise_mean = np.mean(noise_data)    #get the mean of the noise data
+                    noise_std = np.std(noise_data)  #get the standard deviation of the noise data
+                    spectrogram_img = np.random.normal(loc = noise_mean, scale=noise_std, size = img_dim)   #fill the spectrogram image with noise
+
+                    spectrogram_img[0:event_end_index-start_index,:] = cropped_spectrogram[start_index: event_end_index, :] #add the spectrogram event data to the image
                 else:
-                    spectrogram_img = cropped_spectrogram[start_index: end_index, :]
+                    spectrogram_img = cropped_spectrogram[start_index: end_index, :]    #add the spectrogram event data to the image
 
                 spectrogram_img_arr.append(spectrogram_img)
 
@@ -395,8 +407,9 @@ stft_step_size = 512
 max_frequency = 10000
 min_frequency = 2500
 
-img_dim = (128, 512) # (time, freq)
-img_step_size = 32  # (time)
+img_dim = (32, 512) # (time, freq)
+img_step_size = 4  # (time)
+event_padding_size = 8
 
 
 samples_path = os.path.join(project_dir, 'data', 'spectrogram_samples', f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}.npy')
@@ -411,7 +424,7 @@ if not os.path.exists(samples_path):
     all_spectrogram_images = []
     for index, sample_id in enumerate(sample_ids):
         print(f"Sample: {index + 1:<5}/{len(sample_ids):<5} id: {sample_id}", end='\r')
-        masked_spectrogram, audio_events_arr, spectrogram_img_arr = create_spectrogram_slices(sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size)
+        masked_spectrogram, audio_events_arr, spectrogram_img_arr = create_spectrogram_slices(sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
         all_sample_events += audio_events_arr
         all_spectrogram_images += spectrogram_img_arr
     # print(masked_spectrogram.shape)    
@@ -436,11 +449,14 @@ print(f"Spectrogram dataset shape: {all_spectrogram_images.shape}\n")
 # show_img_sample(all_spectrogram_images[64])
 
 #%%
+writer = SummaryWriter(log_dir=os.path.join(project_dir, 'runs', 'vae'))
+
+#%%
 report_dir = os.path.join(ap.project_base_dir, "reports", "vae", "songbird_model")
 
 learning_rate = 1e-4
 epochs = 100 
-batch_size = 64
+batch_size = 128
 
 val_percentage = 0.05
 random_seed = 42
@@ -450,6 +466,7 @@ plot_params = {
     "plot_num" : 4,
     "sample_rate": sample_rate
 }
+
 
 # %%
 spectrogram_dataset = SpectrogramDataset(all_spectrogram_images, transform=ToTensor())
@@ -491,13 +508,14 @@ for epoch in range(0, epochs):
             # print(f"x: {x}")
             x = x.to(device)
             x_hat, mu, logvar = model(x)
-            loss = mse_loss_function(x_hat, x, mu, logvar)
+            loss = loss_function(x_hat, x, mu, logvar)
             train_loss += loss.item()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+        writer.add_scalar("Loss/train", train_loss / len(train_loader), epoch)
         print(f"epoch: {epoch:4} | train loss: {train_loss / len(train_loader.dataset):10.6f}", end = "\r")
 
     val_x = None
@@ -520,9 +538,11 @@ for epoch in range(0, epochs):
             #if len(x) > plot_params["plot_num"]:
             val_x = x
             val_x_hat = x_hat
+        print()
+        writer.add_scalar("Loss/test", test_loss / len(test_loader), epoch)
+        print(f"epoch: {epoch:4} | test loss: {test_loss / len(test_loader.dataset):10.6f}")
 
     
-    print()
     
     show_x_vs_y_samples(val_x, val_x_hat, img_dim, f'Epoch_{epoch}', 1, plot_params["plot_num"], plot_params["report_dir"])
 #%%

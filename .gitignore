@@ -8,6 +8,7 @@ __pycache__/
 # Project directories
 models/*
 reports/*
+runs/*
 # Ignore gbif-xeno-canto dataset info
 
 # Ignore generated datset files and directories
