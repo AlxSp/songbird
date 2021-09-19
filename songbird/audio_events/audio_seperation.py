@@ -374,25 +374,49 @@ class ToTensor(object):
 class SpectrogramFileDataset(Dataset):
     def __init__(self, 
                  dataset_path,
-                 img_dim,
                  transform = None) -> None:
 
-        self.dataset_path = dataset_path
+        self.dataset_path = dataset_path    
+        self.data_path = os.path.join(self.dataset_path, "data")
+        self.data_info_path = os.path.join(self.dataset_path, "data_info")
         self.img_dim = img_dim
         self.transform = transform
 
-        with open(os.path.join(self.dataset_path, "data_info.json"), 'r') as f:
-            self.dataset_info = json.load(f)
+        with open(os.path.join(self.dataset_path, "data_attributes.json"), 'r') as f:
+            self.dataset_attributes = json.load(f)
 
-        self.sample_paths = os.listdir(os.path.join(self.dataset_path, "data"))
+        self.sample_byte_size = np.prod(self.dataset_attributes["img_dim"]) * np.dtype(np.float32).itemsize
+
+
+        self.samples_info_paths = os.listdir(self.data_info_path)
+        self.samples_file_paths = [os.path.join(self.data_path, samples_info_path.replace(".json", ".bin")) for samples_info_path in self.samples_info_paths]
+
+        samples_to_file_indices = [] # array to store each file's stating sample index 
+        samples_index = 0
+        for samples_info_path in self.samples_info_paths:
+            with open(os.path.join(self.data_info_path, samples_info_path), 'r') as f:
+                samples_to_file_indices.append(samples_index)
+                samples_in_file = len(json.load(f))
+                samples_index += samples_in_file
+                
+        self.samples_to_file_indices = np.array(samples_to_file_indices)
+        self.total_samples = samples_index
+
 
     def __len__(self):
-        return len(self.sample_paths)
+        return self.total_samples
 
-    def __getitem__(self, idx):
-        sample = np.load(self.samples_paths[idx])
-        sample = (sample - self.dataset_info["min_value"]) / (self.dataset_info["max_value"] - self.dataset_info["min_value"])
-        #sample = self.sample_paths[idx]
+
+    def __getitem__(self, index):
+        file_index = np.abs(self.samples_to_file_indices - index).argmin() #find the closest file by checking what file's starting sample index is closest to the index
+        file_index = file_index if self.samples_to_file_indices[file_index] - index <= 0 else file_index - 1 #if the file's starting sample index is larger than the index, choose the preceding file
+        sample_index = index - self.samples_to_file_indices[file_index] #find the actual sample index in the file by subtracting the file's starting sample index from the index. This will be used as the offset in the file
+        # print(f"index: {index} nearest file index: {file_index} file index: {self.samples_to_file_indices[file_index]} sample index: {sample_index}")
+
+        #read the binary file with the sample index as the offset times the size of a sample in bytes. Read in the amount of floats that make up one sample. Reshape the sample into the it's original shape
+        sample = np.fromfile(self.samples_file_paths[file_index], offset = sample_index * self.sample_byte_size, dtype = np.float32, count = self.img_dim[0] * self.img_dim[1]).reshape(self.img_dim)
+        sample = (sample - self.dataset_attributes["min_value"]) / (self.dataset_attributes["max_value"] - self.dataset_attributes["min_value"]) #normalize the sample
+
         if self.transform:
             sample = self.transform(sample)
         return sample
@@ -418,14 +442,19 @@ class SpectrogramDataset(Dataset):
 def create_samples_from_audio(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size):
     _, _, spectrogram_img_arr, spectrogram_img_info_arr = create_spectrogram_slices(sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
     
-    for index in range(len(spectrogram_img_arr)):
-        img = spectrogram_img_arr[index]
-        img_info = spectrogram_img_info_arr[index]
-        sample_path = os.path.join(dataset_path, f'{sample_id}_i{index}_si{img_info["start_index"]}_ei{img_info["end_index"]}.npy')
-        np.save(sample_path, img)
+    data_path = os.path.join(dataset_path, 'data')
+    samples_file_path = os.path.join(data_path, f"{sample_id}.bin")
 
-    img_max = np.max(spectrogram_img_arr)
-    img_min = np.min(spectrogram_img_arr)
+    data_info_path = os.path.join(dataset_path, 'data_info')
+    data_info_file_path = os.path.join(data_info_path, f"{sample_id}.json")
+
+    np.asarray(spectrogram_img_arr, dtype = np.float32).tofile(samples_file_path)
+
+    with open(data_info_file_path, 'w') as f:
+        json.dump(spectrogram_img_info_arr, f)
+
+    img_max = np.max(spectrogram_img_arr).astype(np.float32)
+    img_min = np.min(spectrogram_img_arr).astype(np.float32)
     return img_max, img_min
 
 #%%
@@ -439,15 +468,17 @@ def equal_split(arr, n_chunks):
     return [arr[index * chunk_size + min(index, m) : (index + 1) * chunk_size + min(index + 1, m)] for index in range(n_chunks)]
 
 #%%
-def create_and_save_dateset(dateset_path, sample_ids, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size, num_workers = 1):
-    data_path = os.path.join(dateset_path, 'data')
+def create_and_save_dateset(dataset_path, sample_ids, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size, num_workers = 1):
+    data_path = os.path.join(dataset_path, 'data')
+    data_info_path = os.path.join(dataset_path, 'data_info')
 
-    if os.path.exists(dateset_path):
-        shutil.rmtree(dateset_path)
+    if os.path.exists(dataset_path):
+        shutil.rmtree(dataset_path)
         #os.rmdir(dateset_path)
 
-    os.makedirs(dateset_path)
+    os.makedirs(dataset_path)
     os.makedirs(data_path)
+    os.makedirs(data_info_path)
 
     max_value = 0.0
     min_value = np.inf
@@ -457,8 +488,8 @@ def create_and_save_dateset(dateset_path, sample_ids, sample_rate, stft_window_s
     if num_workers > 1:
         #chunked_sample_ids = list(equal_split(sample_ids, num_workers))
         with Pool(processes=num_workers) as pool:
-            worker_inputs = [(data_path, sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size) for sample_id in sample_ids]
-            max_min_arr = [max_min for max_min in tqdm.tqdm(pool.istarmap(create_samples_from_audio, worker_inputs), total=len(worker_inputs))]#p.starmap(create_samples_from_audio, worker_inputs)
+            worker_inputs = [(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size) for sample_id in sample_ids]
+            max_min_arr = pool.starmap(create_samples_from_audio, worker_inputs)#p.starmap(create_samples_from_audio, worker_inputs)
 
 
         max_min_arr = np.array(max_min_arr)
@@ -467,14 +498,15 @@ def create_and_save_dateset(dateset_path, sample_ids, sample_rate, stft_window_s
         
     else: 
         for sample_id in tqdm.tqdm(sample_ids):
-            sample_max_value, sample_min_value = create_samples_from_audio(data_path, sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
+            sample_max_value, sample_min_value = create_samples_from_audio(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
             max_value = np.max([max_value, sample_max_value])
             min_value = np.min([min_value, sample_min_value])
 
-    with open(os.path.join(dateset_path, 'data_info.json'), 'w') as f:
+    with open(os.path.join(dataset_path, 'data_attributes.json'), 'w') as f:
         json.dump({
-            "max_value" : max_value,
-            "min_value" : min_value,
+            "img_dim" : list(img_dim),
+            "max_value" : float(max_value),
+            "min_value" : float(min_value),
         }, f)
 
 #%%
@@ -508,9 +540,9 @@ img_dim = (32, 512) # (time, freq)
 img_step_size = 1  # (time)
 event_padding_size = 4
 
-num_workers = 5
+num_workers = 24
 
-create_new = True
+create_new = False
 
 dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}')
 #samples_path = os.path.join(project_dir, 'data', 'spectrogram_samples', f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}.npy')
@@ -520,28 +552,14 @@ all_spectrogram_images = []
 if not os.path.exists(dataset_path) or create_new:
     print("Building dataset")
     #create_and_return_dataset(sample_ids[:12], sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
-    create_and_save_dateset(dataset_path, sample_ids[:3], sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, img_dim, img_step_size, event_padding_size, num_workers=num_workers)
+    create_and_save_dateset(dataset_path, sample_ids, sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, img_dim, img_step_size, event_padding_size, num_workers=num_workers)
     print("Dataset built")
     print(f"Stored in location: {dataset_path}")
-    # print("Dataset not found. Building dataset")
-    # all_sample_events = []
-    # all_spectrogram_images = []
-    # for index, sample_id in enumerate(sample_ids):
-    #     print(f"Sample: {index + 1:<5}/{len(sample_ids):<5} id: {sample_id}", end='\r')
-    #     masked_spectrogram, audio_events_arr, spectrogram_img_arr, _ = create_spectrogram_slices(sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
-    #     all_sample_events += audio_events_arr
-    #     all_spectrogram_images += spectrogram_img_arr
-    # # print(masked_spectrogram.shape)    
-    # #how_img_sample(masked_spectrogram)
-
-    # np.save(samples_path, all_spectrogram_images)
-
 else:
     print(f"Dataset found. Loading dataset from {dataset_path}")
     #all_spectrogram_images = np.load(samples_path)
     #ap.save_spectrogram_plot(masked_spectrogram.T, acp.sample_rate, acp.step_size, sample_id, title=f'{sample_id}', y_labels=rfft_bin_freq)
 # %%
-
 #all_spectrogram_images = min_max_normalize(all_spectrogram_images)
 
 #%%
@@ -550,6 +568,10 @@ else:
 # show_img_sample(all_spectrogram_images[0])
 # show_img_sample(all_spectrogram_images[32])
 # show_img_sample(all_spectrogram_images[64])
+
+def print_process(epoch, train_loss, test_loss):
+    print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
+
 
 def get_run_dir(run_name):
     runs_dir = os.path.join(project_dir, 'runs')
@@ -607,7 +629,7 @@ plot_params = {
 
 
 # %%
-spectrogram_dataset = SpectrogramFileDataset(all_spectrogram_images, transform=ToTensor())
+spectrogram_dataset = SpectrogramFileDataset(dataset_path, transform=ToTensor())
 
 print(f"Total dataset length: {len(spectrogram_dataset)}")
 
@@ -643,7 +665,7 @@ for epoch in range(0, epochs):
     train_loss = 0
     test_loss = 0
     
-    
+    batch_size = 0
     if epoch > 0:
         model.train()
         for x in train_loader:
@@ -652,17 +674,20 @@ for epoch in range(0, epochs):
             x_hat, mu, logvar = model(x)
             loss = loss_function(x_hat, x, mu, logvar)
             train_loss += loss.item()
-
+            batch_size += len(x)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
+            print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
+
+    print(f"tain set length: {len(train_loader.dataset)} batch_size: {batch_size}")
 
     val_x = None
     val_x_hat = None
     means, variance, labels = list(), list(), list()
+
     with torch.no_grad():
         model.eval()
         for x in test_loader:

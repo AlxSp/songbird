@@ -145,11 +145,11 @@ ap.empty_or_create_dir(report_dir)
 set_torch_seeds(42)
 # %%
 batch_size = 256
-kwargs = { 'num_workers': 1, 'pin_memory': True }
+kwargs = { 'num_workers': 1, 'pin_memory': False }
 
 train_loader = torch.utils.data.DataLoader(
     MNIST(
-        './data',
+        os.path.join(ap.project_base_dir, 'data'),
         train=True, 
         download=True, 
         transform= transforms.Compose(
@@ -165,7 +165,7 @@ train_loader = torch.utils.data.DataLoader(
 
 test_loader = torch.utils.data.DataLoader(
     MNIST(
-        './data', 
+        os.path.join(ap.project_base_dir, 'data'), 
         train=False, 
         download=True, 
         transform=transforms.Compose(
@@ -237,7 +237,8 @@ for epoch in range(0, epochs + 1):
             if len(x) > plot_params["plot_num"]:
                 plot_x = x
                 plot_x_hat = x_hat
-    
+        print()
+        print(f"epoch: {epoch:4} | test loss: {test_loss / len(test_loader.dataset):10.6f}")
     show_mnist(plot_x, plot_x_hat, f'Epoch_{epoch}', 1, **plot_params)
 
 
