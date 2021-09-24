@@ -47,8 +47,8 @@ class VariationalEncoder(nn.Module):
         #self.conv1 = nn.Conv1d(1, 6, 3)
         #self.dense1 = nn.Linear(4410, 400) 
         
-        self.mean_dense = nn.Linear(2048, 128)
-        self.variance_dense = nn.Linear(2048, 128)
+        self.mean_dense = nn.Linear(2048, 256)
+        self.variance_dense = nn.Linear(2048, 256)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -81,7 +81,7 @@ class VariationalDecoder(nn.Module):
     def __init__(self):
         super(VariationalDecoder, self).__init__()
         
-        self.dense1 = nn.Linear(128, 2048)
+        self.dense1 = nn.Linear(256, 2048)
         self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv2 = nn.ConvTranspose2d(64, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv3 = nn.ConvTranspose2d(32, 16, kernel_size=5, stride=2, padding=2, output_padding=1)
@@ -331,37 +331,38 @@ def show_img_sample(img):
     plt.show()
 
 # %%
-def show_x_vs_y_samples(x, y, sample_dim, label=None, fig_num = 1, plot_num = 4, report_dir = None):
+def show_x_vs_y_samples(x, y, sample_dim, tile=None, column_headers = [], row_headers = [], fig_num = 1, plot_num = 4, report_dir = None):
     for fig_index in range(fig_num):
         plot_num = min(len(x), plot_num)
         
         fig, axes = plt.subplots(nrows = 2, ncols = plot_num, squeeze=False, sharex=True, sharey=True)
-        fig.suptitle(f"{label} - Real Data (X) vs Reconstruction (X Hat)")
+        fig.suptitle(f"{tile} - Real Data (X) vs Reconstruction (X Hat)")
         in_pic = x.data.cpu().view(-1, *sample_dim)
         #axs.suptitle(label + ' - real test data / reconstructions', color='w', fontsize=16)
         #axs[0].set_title(f"{label} - x")
         for i in range(plot_num):
             axes[0, i].imshow(in_pic[fig_index * plot_num + i])#plt.subplot(1, plot_num, i + 1)
             axes[0, i].axis('off')
-            #plt.imshow(in_pic[i+plot_num+plot_index])
-            #plt.axis('off')
 
         out_pic = y.data.cpu().view(-1, *sample_dim)
         #plt.figure(figsize=(18,6))
         #axs[1].set_title(f"{label} - y")
         for i in range(plot_num):
-            #plt.subplot(1, plot_num, i + 1)
             axes[1, i].imshow(out_pic[fig_index * plot_num + i])
             axes[1, i].axis('off')
 
-        for ax, row in zip(axes[:,0], ["X", "X Hat"]):
+        for ax, col in zip(axes[0,:], column_headers):
+            ax.set_title(col, size=10)
+
+        for ax, row in zip(axes[:,0], row_headers): #["X", "X Hat"]
             ax.annotate(row, (0, 0.5), xytext=(-25, 0), ha='right', va='center',
                 size=15, rotation=90, xycoords='axes fraction',
                 textcoords='offset points')
 
-        fig.canvas.set_window_title(f"{label} - real test data / reconstructions'")
-        plt.savefig(os.path.join(report_dir, f'{label}_{fig_index}.png'))
-        writer.add_figure(f"{label} - real test data / reconstructions", fig, None)
+        # plt.tight_layout(pad = 0.5)
+        fig.canvas.set_window_title(f"{tile} - real test data / reconstructions'")
+        plt.savefig(os.path.join(report_dir, f'{tile}_{fig_index}.png'))
+        writer.add_figure(f"{tile} - real test data / reconstructions", fig, None)
 
 #%%
 class ToTensor(object):
@@ -384,16 +385,17 @@ class SpectrogramFileDataset(Dataset):
 
         with open(os.path.join(self.dataset_path, "data_attributes.json"), 'r') as f:
             self.dataset_attributes = json.load(f)
-
+        # calculate the size of one sample in bytes; the sample's dimensions multiplied with each other, multiplied by the data type's byte size that was used to store the samples in the file
         self.sample_byte_size = np.prod(self.dataset_attributes["img_dim"]) * np.dtype(np.float32).itemsize
 
+        #get all files in the data_info directory
+        samples_info_paths = os.listdir(self.data_info_path)
+        #conver
+        self.samples_file_paths = [os.path.join(self.data_path, samples_info_path.replace(".json", ".bin")) for samples_info_path in samples_info_paths]
 
-        self.samples_info_paths = os.listdir(self.data_info_path)
-        self.samples_file_paths = [os.path.join(self.data_path, samples_info_path.replace(".json", ".bin")) for samples_info_path in self.samples_info_paths]
-
-        samples_to_file_indices = [] # array to store each file's stating sample index 
+        samples_to_file_indices = [] # array to store each file's starting sample index 
         samples_index = 0
-        for samples_info_path in self.samples_info_paths:
+        for samples_info_path in samples_info_paths:
             with open(os.path.join(self.data_info_path, samples_info_path), 'r') as f:
                 samples_to_file_indices.append(samples_index)
                 samples_in_file = len(json.load(f))
@@ -410,6 +412,7 @@ class SpectrogramFileDataset(Dataset):
     def __getitem__(self, index):
         file_index = np.abs(self.samples_to_file_indices - index).argmin() #find the closest file by checking what file's starting sample index is closest to the index
         file_index = file_index if self.samples_to_file_indices[file_index] - index <= 0 else file_index - 1 #if the file's starting sample index is larger than the index, choose the preceding file
+        file_name = self.samples_file_paths[file_index]
         sample_index = index - self.samples_to_file_indices[file_index] #find the actual sample index in the file by subtracting the file's starting sample index from the index. This will be used as the offset in the file
         # print(f"index: {index} nearest file index: {file_index} file index: {self.samples_to_file_indices[file_index]} sample index: {sample_index}")
 
@@ -419,7 +422,9 @@ class SpectrogramFileDataset(Dataset):
 
         if self.transform:
             sample = self.transform(sample)
-        return sample
+
+
+        return sample, file_name, sample_index
 
 # %%
 class SpectrogramDataset(Dataset):
@@ -649,7 +654,7 @@ encoder = VariationalEncoder()
 decoder = VariationalDecoder()
 model = VariationalAutoDecoder(encoder, decoder)
 
-writer.add_graph(model, next(iter(train_loader)))
+writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
 #%%
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using {device} device for training")
@@ -668,17 +673,17 @@ for epoch in range(0, epochs):
     batch_size = 0
     if epoch > 0:
         model.train()
-        for x in train_loader:
+        for batch, _, _ in train_loader:
             # print(f"x: {x}")
-            x = x.to(device)
-            x_hat, mu, logvar = model(x)
-            loss = loss_function(x_hat, x, mu, logvar)
+            batch = batch.to(device)
+            x_hat, mu, logvar = model(batch)
+            loss = loss_function(x_hat, batch, mu, logvar)
             train_loss += loss.item()
-            batch_size += len(x)
+            batch_size += len(batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
+            print(f"epoch: {epoch:5} | train loss: {train_loss / batch_size:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
 
@@ -686,32 +691,44 @@ for epoch in range(0, epochs):
 
     val_x = None
     val_x_hat = None
+    file_paths = None
+    sample_indices = None
+
     means, variance, labels = list(), list(), list()
 
     with torch.no_grad():
         model.eval()
-        for x in test_loader:
-            x = x.to(device)
+        for batch, file_paths, sample_indices in test_loader:
+            batch = batch.to(device)
 
-            x_hat, mu, logvar = model(x)
+            x_hat, mu, logvar = model(batch)
 
-            test_loss += loss_function(x_hat, x, mu, logvar).item()
+            test_loss += loss_function(x_hat, batch, mu, logvar).item()
 
             means.append(mu.detach())
             variance.append(logvar.detach())
-            labels.append(x.detach())
+            labels.append(batch.detach())
 
             #if len(x) > plot_params["plot_num"]:
-            val_x = x
+            val_x = batch
             val_x_hat = x_hat
         print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
         
         writer.add_scalar("Loss/test", test_loss / len(test_loader.dataset), epoch)
 
-    
-    
+        show_x_vs_y_samples(
+            val_x, 
+            val_x_hat, 
+            sample_dim = img_dim, 
+            tile = f'Epoch_{epoch}', 
+            column_headers = [f"file: {os.path.splitext(os.path.basename(file_path))[0]}\nsample: {sample_index}" for file_path, sample_index in zip(file_paths, sample_indices)], 
+            row_headers = ["X", "X Hat"], 
+            fig_num = 1, 
+            plot_num = plot_params["plot_num"], 
+            report_dir = plot_params["report_dir"]
+        )
+
     print()
-    show_x_vs_y_samples(val_x, val_x_hat, img_dim, f'Epoch_{epoch}', 1, plot_params["plot_num"], plot_params["report_dir"])
 #%%
 # time_mean_width =  np.mean([event.end_time_index - event.start_time_index for event in all_sample_events])
 # time_std_with = np.std([event.end_time_index - event.start_time_index for event in all_sample_events])
