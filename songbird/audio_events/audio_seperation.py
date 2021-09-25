@@ -5,26 +5,30 @@ import shutil
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(project_dir)
 
+from songbird.data.dataset_info import DatasetInfo, SampleRecordingType
+import audio_processing as ap
+
 import pydub
 import time
 import numpy as np
 import pandas as pd
 import tqdm
 import json
-from songbird.data.dataset_info import DatasetInfo, SampleRecordingType
-import audio_processing as ap
+from dataclasses import dataclass
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 import scipy as sp
 from scipy import signal
-import matplotlib.pyplot as plt
-from skimage.feature import peak_local_max
 from scipy.ndimage.filters import maximum_filter
 from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
-from dataclasses import dataclass
+
+from skimage.feature import peak_local_max
 
 import istarmap
 from multiprocessing import Pool
-
-
 
 import torch
 import torch.nn as nn
@@ -42,13 +46,13 @@ class VariationalEncoder(nn.Module):
         self.conv2 = nn.Conv2d(8, 16, kernel_size=5, stride=2, padding=2)
         self.conv3 = nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2)
         self.conv4 = nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2)
-        self.conv5 = nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=2)
+        #self.conv5 = nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=2)
         
         #self.conv1 = nn.Conv1d(1, 6, 3)
         #self.dense1 = nn.Linear(4410, 400) 
         
-        self.mean_dense = nn.Linear(2048, 256)
-        self.variance_dense = nn.Linear(2048, 256)
+        self.mean_dense = nn.Linear(4096, 256)
+        self.variance_dense = nn.Linear(4096, 256)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -59,7 +63,7 @@ class VariationalEncoder(nn.Module):
         # print(f"Conv 4 output shape: {x.shape}")
         x = F.relu(self.conv4(x))
         # print(f"Conv 4 output shape: {x.shape}")
-        x = F.relu(self.conv5(x))
+        #x = F.relu(self.conv5(x))
         # print(f"Conv 5 output shape: {x.shape}")
 
         # x = self.pool(x)
@@ -81,8 +85,8 @@ class VariationalDecoder(nn.Module):
     def __init__(self):
         super(VariationalDecoder, self).__init__()
         
-        self.dense1 = nn.Linear(256, 2048)
-        self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
+        self.dense1 = nn.Linear(256, 4096)
+        #self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv2 = nn.ConvTranspose2d(64, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv3 = nn.ConvTranspose2d(32, 16, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv4 = nn.ConvTranspose2d(16, 8, kernel_size=5, stride=2, padding=2, output_padding=1)
@@ -93,9 +97,9 @@ class VariationalDecoder(nn.Module):
         # print(f"Input shape: {x.shape}")
         x =  F.relu(self.dense1(x))
         # print(f"Dense output shape: {x.shape}")
-        x = x.view(-1, 128, 1, 16)
+        x = x.view(-1, 64, 2, 32) #x.view(-1, 128, 1, 16)
         # print(f"Reshape shape: {x.shape}")
-        x = F.relu(self.conv1(x))
+        #x = F.relu(self.conv1(x))
         # print(f"Conv 1 output shape: {x.shape}")
         x = F.relu(self.conv2(x))
         # print(f"Conv 2 output shape: {x.shape}")
@@ -130,22 +134,22 @@ class VariationalAutoDecoder(nn.Module):
         return x, x_mean, x_variance
 
 #%%
-def loss_function(x_hat, x, mean, variance):
+def loss_function(x_hat, x, mean, variance, beta = 1.0):
     BCE = nn.functional.binary_cross_entropy(
         x_hat, x, reduction = 'sum'
     )
     KLD = 0.5 * torch.sum(torch.exp(variance) - variance - 1 + mean.pow(2))
 
-    return BCE + KLD
+    return BCE + beta * KLD
 
 
-def mse_loss_function(x_hat, x, mean, variance):
+def mse_loss_function(x_hat, x, mean, variance, beta = 1.0):
     BCE = nn.functional.mse_loss(
         x_hat, x, reduction = 'sum'
     )
     KLD = 0.5 * torch.sum(torch.exp(variance) - variance - 1 + mean.pow(2))
 
-    return BCE + KLD
+    return BCE + beta * KLD
 
 
 #%%
@@ -600,7 +604,7 @@ report_dir = os.path.join(ap.project_base_dir, "reports", "vae", "songbird_model
 
 learning_rate = 1e-4
 epochs = 200 
-batch_size = 1024
+samples_count = 1024
 
 val_percentage = 0.05
 random_seed = 42
@@ -608,7 +612,7 @@ random_seed = 42
 writer.add_hparams(
     {   "learning_rate": learning_rate,
         "epochs": epochs,
-        "batch_size": batch_size,
+        "batch_size": samples_count,
         "val_percentage": val_percentage,
         "random_seed": random_seed,
         "Optimizer": "AdamW",
@@ -635,7 +639,7 @@ plot_params = {
 
 # %%
 spectrogram_dataset = SpectrogramFileDataset(dataset_path, transform=ToTensor())
-
+print(f"{'#'*3} Dataset info {'#'*6}")
 print(f"Total dataset length: {len(spectrogram_dataset)}")
 
 #%%
@@ -644,8 +648,8 @@ test_size = len(spectrogram_dataset) - train_size #int(len(spectrogram_dataset) 
 train_set, val_set = torch.utils.data.random_split(spectrogram_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(random_seed))
 
 # %%
-train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=12)
-test_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=12)
+train_loader = DataLoader(train_set, batch_size=samples_count, shuffle=True, num_workers=12)
+test_loader = DataLoader(val_set, batch_size=samples_count, shuffle=True, num_workers=12)
 #%%
 print(f"Train length: {train_size} Test length: {test_size}")
 print(f"Train batch num: {len(train_loader)} Test batch num: {len(test_loader)}")
@@ -657,6 +661,7 @@ model = VariationalAutoDecoder(encoder, decoder)
 writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
 #%%
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"{'#'*3} {'Training info' + ' ':{8}^{'#'}}")
 print(f"Using {device} device for training")
 model.to(device)
 model.train()
@@ -666,11 +671,12 @@ model.train()
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 #%%
+print(f"{'#'*3} Training {'#'*6}")
 for epoch in range(0, epochs):
     train_loss = 0
     test_loss = 0
     
-    batch_size = 0
+    samples_count = 0
     if epoch > 0:
         model.train()
         for batch, _, _ in train_loader:
@@ -679,15 +685,16 @@ for epoch in range(0, epochs):
             x_hat, mu, logvar = model(batch)
             loss = loss_function(x_hat, batch, mu, logvar)
             train_loss += loss.item()
-            batch_size += len(batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            print(f"epoch: {epoch:5} | train loss: {train_loss / batch_size:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
+            
+            samples_count += len(batch)
+            print(f"epoch: {epoch:5} | train loss: {train_loss / samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
 
-    print(f"tain set length: {len(train_loader.dataset)} batch_size: {batch_size}")
+    # print(f"tain set length: {len(train_loader.dataset)} samples_count: {samples_count}")
 
     val_x = None
     val_x_hat = None
@@ -712,6 +719,7 @@ for epoch in range(0, epochs):
             #if len(x) > plot_params["plot_num"]:
             val_x = batch
             val_x_hat = x_hat
+
         print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
         
         writer.add_scalar("Loss/test", test_loss / len(test_loader.dataset), epoch)
