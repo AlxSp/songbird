@@ -19,6 +19,8 @@ data/*
 #Jupyter notebooks
 audio_sample_analysis.ipynb 
 
-
 #Exceptions
 !.gitkeep
+
+# Distribution / packaging
+*.egg-info/

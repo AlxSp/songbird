@@ -87,7 +87,7 @@
 
 ----
 
-### audio_events/
+### audio/
 
 * ### generate_audio_events.py
 
@@ -160,7 +160,7 @@
 
     #### 2. peak detection function (`fn_detect_peaks_in_spectrogram(transposed_spectrogram, event_detection_parameters)`):
         
-    > The purpose of this function is to audio_events/peaks in the spectrogram. While iterating over the spectrogram when a peak is detected, it should be marked on an identically sized matrix with 1. It's best to create an identically sized matrix filled with 0s and then add the 1s.
+    > The purpose of this function is to audio/peaks in the spectrogram. While iterating over the spectrogram when a peak is detected, it should be marked on an identically sized matrix with 1. It's best to create an identically sized matrix filled with 0s and then add the 1s.
         
     Input:    
     - a 2d array  which represents a transposed spectrogram. Input format is (frequency_bins, time_steps).
@@ -216,7 +216,7 @@ notebooks/
 │   ├──data/ 
 │   │   ├── create_data_dictionary.py  
 │   │   └── download_data.py
-│   ├──audio_events/ 
+│   ├──audio/ 
 │   │   ├── create_data_dictionary.py  
 │   │   └── download_data.py
 │ 
