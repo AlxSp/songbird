@@ -37,31 +37,99 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
+class ResidualBlock2d(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock2d, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
+        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
+
+        #if the stride is not 1 or the input and output channels are not the same, transform residual value into the right shape
+        if stride != 1 or in_channels != out_channels:
+            self.residual = nn.Sequential(
+                nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(num_features=out_channels)
+            )
+        else:
+            self.residual = nn.Identity()
+        
+
+    def forward(self, x):
+        residual = self.residual(x)
+        x = self.conv1(x)
+        # print(f"Conv 1 output shape: {x.shape}")
+        x = self.batch_norm1(x)
+        x = F.relu(x)
+        x = self.conv2(x)
+        # print(f"Conv 2 output shape: {x.shape}")
+        x = self.batch_norm2(x)
+        x = x + residual
+        x = F.relu(x)
+
+        return x
+
+class TransposeResidualBlock2d(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1,):
+        super(TransposeResidualBlock2d, self).__init__()
+        self.tconv1 = nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.tconv2 = nn.ConvTranspose2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
+        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
+
+    def forward(self, x):
+        residual =  x
+        x = self.tconv1(x)
+        x = self.batch_norm1(x)
+        x = F.relu(x)
+        x = self.tconv2(x)
+        x = self.batch_norm2(x)
+        x = x + residual
+        x = F.relu(x)
+
+        return x
+
 #%%
 class VariationalEncoder(nn.Module):
     def __init__(self):
         super(VariationalEncoder, self).__init__()
+
+        self.res_block1 = ResidualBlock2d(in_channels=1, out_channels=16)
+        self.res_block2 = ResidualBlock2d(in_channels=16, out_channels=32)
+        self.res_block3 = ResidualBlock2d(in_channels=32, out_channels=64)
+
+        self.max_pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.max_pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.max_pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        self.conv1 = nn.Conv2d(1, 8, kernel_size=5, stride=2, padding=2)
-        self.conv2 = nn.Conv2d(8, 16, kernel_size=5, stride=2, padding=2)
-        self.conv3 = nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2)
-        self.conv4 = nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2)
+        # self.conv1 = nn.Conv2d(1, 8, kernel_size=5, stride=2, padding=2)
+        # self.conv2 = nn.Conv2d(8, 16, kernel_size=5, stride=2, padding=2)
+        # self.conv3 = nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2)
+        # self.conv4 = nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2)
         #self.conv5 = nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=2)
         
         #self.conv1 = nn.Conv1d(1, 6, 3)
         #self.dense1 = nn.Linear(4410, 400) 
         
-        self.mean_dense = nn.Linear(4096, 256)
-        self.variance_dense = nn.Linear(4096, 256)
+        self.mean_dense = nn.Linear(16384, 256)
+        self.variance_dense = nn.Linear(16384, 256)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        # print(f"Conv 1 output shape: {x.shape}")
-        x = F.relu(self.conv2(x))
-        # print(f"Conv 2 output shape: {x.shape}")
-        x = F.relu(self.conv3(x))
-        # print(f"Conv 4 output shape: {x.shape}")
-        x = F.relu(self.conv4(x))
+        # print(f"Input shape: {x.shape}")
+        x = self.res_block1(x)#F.relu(self.conv1(x))
+        # print(f"Res 1 output shape: {x.shape}")
+        x = self.max_pool1(x)
+
+        x = self.res_block2(x)#F.relu(self.conv2(x))
+        # print(f"Res 2 output shape: {x.shape}")
+        x = self.max_pool2(x)
+        
+        x = self.res_block3(x)#F.relu(self.conv3(x))
+        # print(f"Res 3 output shape: {x.shape}")
+        x = self.max_pool3(x)
+        #x = F.relu(self.conv4(x))
         # print(f"Conv 4 output shape: {x.shape}")
         #x = F.relu(self.conv5(x))
         # print(f"Conv 5 output shape: {x.shape}")
@@ -604,7 +672,7 @@ report_dir = os.path.join(ap.project_base_dir, "reports", "vae", "songbird_model
 
 learning_rate = 1e-4
 epochs = 200 
-samples_count = 1024
+batch_size = 1024 // 8
 
 val_percentage = 0.05
 random_seed = 42
@@ -612,7 +680,7 @@ random_seed = 42
 writer.add_hparams(
     {   "learning_rate": learning_rate,
         "epochs": epochs,
-        "batch_size": samples_count,
+        "batch_size": batch_size,
         "val_percentage": val_percentage,
         "random_seed": random_seed,
         "Optimizer": "AdamW",
@@ -639,7 +707,7 @@ plot_params = {
 
 # %%
 spectrogram_dataset = SpectrogramFileDataset(dataset_path, transform=ToTensor())
-print(f"{'#'*3} Dataset info {'#'*6}")
+print(f"{'#'*3} {'Dataset info' + ' ':{'#'}<{24}}")
 print(f"Total dataset length: {len(spectrogram_dataset)}")
 
 #%%
@@ -648,8 +716,8 @@ test_size = len(spectrogram_dataset) - train_size #int(len(spectrogram_dataset) 
 train_set, val_set = torch.utils.data.random_split(spectrogram_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(random_seed))
 
 # %%
-train_loader = DataLoader(train_set, batch_size=samples_count, shuffle=True, num_workers=12)
-test_loader = DataLoader(val_set, batch_size=samples_count, shuffle=True, num_workers=12)
+train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=12)
+test_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=12)
 #%%
 print(f"Train length: {train_size} Test length: {test_size}")
 print(f"Train batch num: {len(train_loader)} Test batch num: {len(test_loader)}")
@@ -661,7 +729,7 @@ model = VariationalAutoDecoder(encoder, decoder)
 writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
 #%%
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"{'#'*3} {'Training info' + ' ':{8}^{'#'}}")
+print(f"{'#'*3} {'Training info' + ' ':{'#'}<{24}}")
 print(f"Using {device} device for training")
 model.to(device)
 model.train()
@@ -671,7 +739,7 @@ model.train()
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 #%%
-print(f"{'#'*3} Training {'#'*6}")
+print(f"{'#'*3} {'Training' + ' ':{'#'}<{24}}")
 for epoch in range(0, epochs):
     train_loss = 0
     test_loss = 0
