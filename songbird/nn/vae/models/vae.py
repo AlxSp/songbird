@@ -5,26 +5,26 @@ import torch.nn.functional as F
 class VariationalEncoder(nn.Module):
     def __init__(self):
         super(VariationalEncoder, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2)
-        self.conv2 = nn.Conv2d(32, 32, kernel_size=5, stride=2, padding=2)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2)
-        self.conv4 = nn.Conv2d(64, 64, kernel_size=5, stride=2, padding=2)
-        self.conv5 = nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=2)
+        self.dense1 = nn.Linear(16384, 14384)
+        self.dense2 = nn.Linear(14384, 12384)
+        self.dense3 = nn.Linear(12384, 10384)
+        self.dense4 = nn.Linear(10384, 8384)
+        self.dense5 = nn.Linear(8384, 6384)
 
-        self.mean_dense = nn.Linear(2048, 256)
-        self.variance_dense = nn.Linear(2048, 256)
+        self.mean_dense = nn.Linear(6384, 256)
+        self.variance_dense = nn.Linear(6384, 256)
 
     def forward(self, x):
         # print(f"Input shape: {x.shape}")
-        x = F.relu(self.conv1(x))
+        x = F.relu(self.dense1(x))
         # print(f"Conv 1 output shape: {x.shape}")
-        x = F.relu(self.conv2(x))
+        x = F.relu(self.dense2(x))
         # print(f"Conv 2 output shape: {x.shape}")
-        x = F.relu(self.conv3(x))
+        x = F.relu(self.dense3(x))
         # print(f"Conv 3 output shape: {x.shape}")
-        x = F.relu(self.conv4(x))
+        x = F.relu(self.dense4(x))
         # print(f"Conv 4 output shape: {x.shape}")
-        x = F.relu(self.conv5(x))
+        x = F.relu(self.dense5(x))
         # print(f"Conv 5 output shape: {x.shape}")
 
         # x = self.pool(x)

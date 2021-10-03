@@ -3,10 +3,10 @@ from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
 from songbird.audio.audio_seperation import create_and_save_dateset
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
 from songbird.nn.vae.loss import loss_function
-from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+#from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+from songbird.nn.vae.models.conv_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 
-import os, sys
-import shutil
+import os
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -94,7 +94,7 @@ else:
     print(f"Dataset found. Loading dataset from {dataset_path}")
 
 #%%
-model_name = 'res_vae'
+model_name = 'conv_vae'
 model_runs_dir = os.path.join(project_dir, 'runs', model_name)
 run_dir = get_run_dir(model_runs_dir)
 
@@ -177,25 +177,26 @@ for epoch in range(0, epochs):
     train_loss = 0
     test_loss = 0
     
-    samples_count = 0
+    train_samples_count = 0
     if epoch > 0:
         model.train()
         for batch, _, _ in train_loader:
-            # print(f"x: {x}")
+            
             batch = batch.to(device)
             x_hat, mu, logvar = model(batch)
+            
             loss = loss_function(x_hat, batch, mu, logvar)
             train_loss += loss.item()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-            samples_count += len(batch)
-            print(f"epoch: {epoch:5} | train loss: {train_loss / samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
+            train_samples_count += len(batch)
+            print(f"epoch: {epoch:5} | train loss: {train_loss / train_samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
 
-    # print(f"tain set length: {len(train_loader.dataset)} samples_count: {samples_count}")
+    # print(f"tain set length: {len(train_loader.dataset)} train_samples_count: {train_samples_count}")
 
     val_x = None
     val_x_hat = None
@@ -217,7 +218,6 @@ for epoch in range(0, epochs):
             variance.append(logvar.detach())
             labels.append(batch.detach())
 
-            #if len(x) > plot_params["plot_num"]:
             val_x = batch
             val_x_hat = x_hat
 

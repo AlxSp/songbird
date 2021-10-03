@@ -1,4 +1,4 @@
-from torch._C import dtype
+import torch
 import torchaudio
 import torch
 import librosa
@@ -111,6 +111,17 @@ def load_audio_events(sample_id):
 ######################################################################################################################
 # Time Series to Spectogram ##########################################################################################
 
+def pytorch_create_spectrogram(wave_signal, window_size, step_size, power = 2.0):
+    spectrogram = torchaudio.transforms.Spectrogram(
+      n_fft = window_size,
+      win_length = window_size,
+      hop_length = step_size,
+      center = True,
+      pad_mode = "reflect",
+      power = power,
+    )
+    return spectrogram(wave_signal), torch.fft.rfftfreq(window_size)
+
 def create_spectrogram(sample, window_size, step_size, sample_rate, reference_power = None):
     #create time series frames
     time_series_frames = get_even_time_series_frames(sample, window_size, step_size)
@@ -140,7 +151,7 @@ def get_even_time_series_frames(time_series : np.array, window_size : int, step_
     return np.array([ series[step*step_size:step*step_size+window_size] for step in range(frame_num)])
 
 def apply_hanning_window(frames : np.array):
-    frames *= np.hanning(frames.shape[frames.ndim - 1])
+    frames *= np.hanning(frames.shape[frames.ndim - 1])    
 
 def calculate_power_spectrum(time_series_frames, n_fft = None):
     mag_frames = np.abs(np.fft.rfft(time_series_frames, n_fft)) # for each frame compute the n point fourier transform 

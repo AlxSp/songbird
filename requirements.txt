@@ -9,6 +9,7 @@ hdbscan
 pandas
 jupyter
 pydub
+tqdm
 torch
 torchvision
 torchaudio
