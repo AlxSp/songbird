@@ -20,14 +20,14 @@ class SpectrogramFileDataset(Dataset):
         self.dataset_path = dataset_path    
         self.data_path = os.path.join(self.dataset_path, "data")
         self.data_info_path = os.path.join(self.dataset_path, "data_info")
-        self.img_dim = None
+        self.sample_dim = None
         self.transform = transform
 
-        with open(os.path.join(self.dataset_path, "data_attributes.json"), 'r') as f:
+        with open(os.path.join(self.dataset_path, "dataset_attributes.json"), 'r') as f:
             self.dataset_attributes = json.load(f)
         # calculate the size of one sample in bytes; the sample's dimensions multiplied with each other, multiplied by the data type's byte size that was used to store the samples in the file
-        self.img_dim = self.dataset_attributes["img_dim"]
-        self.sample_byte_size = np.prod(self.img_dim) * np.dtype(np.float32).itemsize
+        self.sample_dim = self.dataset_attributes["sample_dim"]
+        self.sample_byte_size = np.prod(self.sample_dim) * np.dtype(np.float32).itemsize
 
         #get all files in the data_info directory
         samples_info_paths = os.listdir(self.data_info_path)
@@ -39,7 +39,7 @@ class SpectrogramFileDataset(Dataset):
         for samples_info_path in samples_info_paths:
             with open(os.path.join(self.data_info_path, samples_info_path), 'r') as f:
                 samples_to_file_indices.append(samples_index)
-                samples_in_file = len(json.load(f))
+                samples_in_file = len(json.load(f)["sample_indices"])
                 samples_index += samples_in_file
                 
         self.samples_to_file_indices = np.array(samples_to_file_indices)
@@ -58,7 +58,7 @@ class SpectrogramFileDataset(Dataset):
         # print(f"index: {index} nearest file index: {file_index} file index: {self.samples_to_file_indices[file_index]} sample index: {sample_index}")
 
         #read the binary file with the sample index as the offset times the size of a sample in bytes. Read in the amount of floats that make up one sample. Reshape the sample into the it's original shape
-        sample = np.fromfile(self.samples_file_paths[file_index], offset = sample_index * self.sample_byte_size, dtype = np.float32, count = self.img_dim[0] * self.img_dim[1]).reshape(self.img_dim)
+        sample = np.fromfile(self.samples_file_paths[file_index], offset = sample_index * self.sample_byte_size, dtype = np.float32, count = np.prod(self.sample_dim)).reshape(self.sample_dim)
         sample = (sample - self.dataset_attributes["min_value"]) / (self.dataset_attributes["max_value"] - self.dataset_attributes["min_value"]) #normalize the sample
 
         if self.transform:

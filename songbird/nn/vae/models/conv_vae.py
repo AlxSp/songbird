@@ -46,7 +46,7 @@ class VariationalDecoder(nn.Module):
     def __init__(self):
         super(VariationalDecoder, self).__init__()
         
-        self.dense1 = nn.Linear(256, 4096)
+        self.dense1 = nn.Linear(256, 2048)
         self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv2 = nn.ConvTranspose2d(64, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
         self.conv3 = nn.ConvTranspose2d(64, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
@@ -58,9 +58,9 @@ class VariationalDecoder(nn.Module):
         # print(f"Input shape: {x.shape}")
         x =  F.relu(self.dense1(x))
         # print(f"Dense output shape: {x.shape}")
-        x = x.view(-1, 128, 1, 16)
+        x = x.view(-1, 128, 16, 1)
         # print(f"Reshape shape: {x.shape}")
-        #x = F.relu(self.conv1(x))
+        x = F.relu(self.conv1(x))
         # print(f"Conv 1 output shape: {x.shape}")
         x = F.relu(self.conv2(x))
         # print(f"Conv 2 output shape: {x.shape}")

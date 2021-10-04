@@ -26,14 +26,14 @@ def show_x_vs_y_samples(x, y, sample_dim, tile=None, column_headers = [], row_he
         #axs.suptitle(label + ' - real test data / reconstructions', color='w', fontsize=16)
         #axs[0].set_title(f"{label} - x")
         for i in range(plot_num):
-            axes[0, i].imshow(in_pic[fig_index * plot_num + i])#plt.subplot(1, plot_num, i + 1)
+            axes[0, i].imshow(in_pic[fig_index * plot_num + i], origin = 'lower')#plt.subplot(1, plot_num, i + 1)
             axes[0, i].axis('off')
 
         out_pic = y.data.cpu().view(-1, *sample_dim)
         #plt.figure(figsize=(18,6))
         #axs[1].set_title(f"{label} - y")
         for i in range(plot_num):
-            axes[1, i].imshow(out_pic[fig_index * plot_num + i])
+            axes[1, i].imshow(out_pic[fig_index * plot_num + i], origin = 'lower')
             axes[1, i].axis('off')
 
         for ax, col in zip(axes[0,:], column_headers):
@@ -71,7 +71,7 @@ stft_step_size = 512
 max_frequency = 10000
 min_frequency = 2500
 
-img_dim = (32, 512) # (time, freq)
+img_dim = (512, 32) # (freq, time)  # (time, freq)
 img_step_size = 1  # (time)
 event_padding_size = 4
 
@@ -79,19 +79,10 @@ num_workers = 24
 
 create_new = False
 
-dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}')
+dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}')
 #samples_path = os.path.join(project_dir, 'data', 'spectrogram_samples', f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}.npy')
 
-# %%
-all_spectrogram_images = []
-if not os.path.exists(dataset_path) or create_new:
-    print("Building dataset")
-    #create_and_return_dataset(sample_ids[:12], sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, img_dim, img_step_size, event_padding_size)
-    create_and_save_dateset(dataset_path, sample_ids, sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, img_dim, img_step_size, event_padding_size, num_workers=num_workers)
-    print("Dataset built")
-    print(f"Stored in location: {dataset_path}")
-else:
-    print(f"Dataset found. Loading dataset from {dataset_path}")
+
 
 #%%
 model_name = 'conv_vae'
@@ -137,7 +128,12 @@ plot_params = {
     "sample_rate": sample_rate
 }
 
-
+# %%
+if not os.path.exists(dataset_path):
+    print("Dataset not found. Check if path is correct")
+    exit()
+else:
+    print(f"Dataset found. Loading dataset from {dataset_path}")
 # %%
 spectrogram_dataset = SpectrogramFileDataset(dataset_path, transform=ToTensor())
 print(f"{'#'*3} {'Dataset info' + ' ':{'#'}<{24}}")
