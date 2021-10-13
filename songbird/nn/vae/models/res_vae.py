@@ -35,37 +35,6 @@ class ResidualBlockConv2d(nn.Module):
         x = F.relu(x)
 
         return x
-
-class TransposeResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1,):
-        super(TransposeResidualBlockConv2d, self).__init__()
-        self.tconv1 = nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.tconv2 = nn.ConvTranspose2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-
-        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
-        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
-
-        if stride != 1 or in_channels != out_channels:
-            self.residual = nn.Sequential(
-                nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(num_features=out_channels)
-            )
-        else:
-            self.residual = nn.Identity()
-
-
-    def forward(self, x):
-        residual =  x
-        x = self.tconv1(x)
-        x = self.batch_norm1(x)
-        x = F.relu(x)
-        x = self.tconv2(x)
-        x = self.batch_norm2(x)
-        x = x + residual
-        x = F.relu(x)
-
-        return x
-
 #%%
 class VariationalEncoder(nn.Module):
     def __init__(self):
@@ -110,26 +79,58 @@ class VariationalEncoder(nn.Module):
         x_variance =  self.variance_dense(x)
         
         return  x_mean, x_variance
+
+
+
+class TransposeResidualBlockConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1,):
+        super(TransposeResidualBlockConv2d, self).__init__()
+        self.tconv1 = nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.tconv2 = nn.ConvTranspose2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
+        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
+
+        if stride != 1 or in_channels != out_channels:
+            self.residual = nn.Sequential(
+                nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(num_features=out_channels)
+            )
+        else:
+            self.residual = nn.Identity()
+
+
+    def forward(self, x):
+        residual =  x
+        x = self.tconv1(x)
+        x = self.batch_norm1(x)
+        x = F.relu(x)
+        x = self.tconv2(x)
+        x = self.batch_norm2(x)
+        x = x + residual
+        x = F.relu(x)
+
+        return x
 #%%
 class VariationalDecoder(nn.Module):
     def __init__(self):
         super(VariationalDecoder, self).__init__()
         
-        self.dense1 = nn.Linear(256, 4096)
-        #self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
-        self.conv2 = nn.ConvTranspose2d(64, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
-        self.conv3 = nn.ConvTranspose2d(32, 16, kernel_size=5, stride=2, padding=2, output_padding=1)
-        self.conv4 = nn.ConvTranspose2d(16, 8, kernel_size=5, stride=2, padding=2, output_padding=1)
-        self.conv5 = nn.ConvTranspose2d(8, 1, kernel_size=5, stride=2, padding=2, output_padding=1)
+        self.dense1 = nn.Linear(256, 2048)
+        self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
+        self.conv2 = nn.ConvTranspose2d(64, 64, kernel_size=5, stride=2, padding=2, output_padding=1)
+        self.conv3 = nn.ConvTranspose2d(64, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
+        self.conv4 = nn.ConvTranspose2d(32, 32, kernel_size=5, stride=2, padding=2, output_padding=1)
+        self.conv5 = nn.ConvTranspose2d(32, 1, kernel_size=5, stride=2, padding=2, output_padding=1)
 
     def forward(self, x):
 
         # print(f"Input shape: {x.shape}")
         x =  F.relu(self.dense1(x))
         # print(f"Dense output shape: {x.shape}")
-        x = x.view(-1, 64, 2, 32) #x.view(-1, 128, 1, 16)
+        x = x.view(-1, 128, 16, 1)
         # print(f"Reshape shape: {x.shape}")
-        #x = F.relu(self.conv1(x))
+        x = F.relu(self.conv1(x))
         # print(f"Conv 1 output shape: {x.shape}")
         x = F.relu(self.conv2(x))
         # print(f"Conv 2 output shape: {x.shape}")

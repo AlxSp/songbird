@@ -75,7 +75,7 @@ img_dim = (512, 32) # (freq, time)  # (time, freq)
 img_step_size = 1  # (time)
 event_padding_size = 4
 
-num_workers = 24
+num_workers = 12
 
 create_new = False
 
@@ -95,7 +95,7 @@ print(f"Saving run data to dir: {run_dir}")
 report_dir = os.path.join(project_dir, "reports", "vae", "songbird_model")
 
 learning_rate = 1e-4
-epochs = 200 
+epochs = 400 
 batch_size = 256
 
 val_percentage = 0.05
