@@ -83,6 +83,33 @@ def min_max_normalize(data):
     normalized_data = (data - np.min(data)) / (np.max(data) - np.min(data))
     return normalized_data
 
+def get_sample_index_ranges(audio_events_arr, spectrogram_len, sample_time_dim, sampling_step_size, sampling_padding_size):
+    sample_time_dim = sample_dim[1]
+    start_indices_arr = []
+    end_indices_arr = []
+    # start_time_0 = process_time()
+    for audio_event in audio_events_arr:
+
+        event_start_index = audio_event.start_time_index
+        event_end_index = audio_event.end_time_index
+        event_length = event_end_index - event_start_index    #length of the event
+
+        if event_length < sample_time_dim: #if the sample time dimension is larger than the length of the event
+            #adjust the length of the event to fit the sample time dimension
+            event_middle_index = event_length // 2 + event_start_index   #index of the middle of the event
+            event_end_index = event_middle_index + sample_time_dim // 2 #adjust the end index of the event to fit the sample time dimension
+            event_start_index = event_end_index - sample_time_dim  #adjust the start index of the event to fit the sample time dimension
+        
+        #index of the start of the event with sample padding. Set to zero if index is negative
+        sample_range_start_index = max(event_start_index - sampling_padding_size, 0) 
+        #index of the end of the event with sample padding. Set to spectrogram length if index is greater than spectrogram length
+        sample_range_end_index = min(event_end_index + sampling_padding_size, spectrogram_len) 
+
+        start_indices_arr.append(np.arange(sample_range_start_index, sample_range_end_index - sample_time_dim, sampling_step_size)) # get all start indices for the event
+        end_indices_arr.append(np.arange(sample_range_start_index + sample_time_dim, sample_range_end_index, sampling_step_size)) # get all end indices for the event
+    # print(f"Task: {'Get Slice Indices':<28} | Time taken: {process_time() - start_time_0:>9.3f} sec |")
+
+    audio_events_found = len(start_indices_arr) > 0
 #%%
 def torch_create_spectrogram_samples(
         sample_id, 
@@ -175,11 +202,15 @@ def torch_create_spectrogram_samples(
         #index of the end of the event with sample padding. Set to spectrogram length if index is greater than spectrogram length
         sample_range_end_index = min(event_end_index + sampling_padding_size, spectrogram.shape[1]) 
 
-        start_indices_arr.append(np.arange(sample_range_start_index, sample_range_end_index - sample_time_dim)) # get all start indices for the event
-        end_indices_arr.append(np.arange(sample_range_start_index + sample_time_dim, sample_range_end_index)) # get all end indices for the event
+        start_indices_arr.append(np.arange(sample_range_start_index, sample_range_end_index - sample_time_dim, sampling_step_size)) # get all start indices for the event
+        end_indices_arr.append(np.arange(sample_range_start_index + sample_time_dim, sample_range_end_index, sampling_step_size)) # get all end indices for the event
     # print(f"Task: {'Get Slice Indices':<28} | Time taken: {process_time() - start_time_0:>9.3f} sec |")
 
+    audio_events_found = len(start_indices_arr) > 0
     # start_time_1 = process_time()
+    if not audio_events_found: #if there are no audio events
+        return [], [], audio_events_found
+
     start_indices_arr = np.concatenate(start_indices_arr) #concatenate all the slice indices into a single array
     end_indices_arr = np.concatenate(end_indices_arr) #concatenate all the slice indices into a single array
     sample_slice_indices_arr = np.column_stack((start_indices_arr, end_indices_arr)) #convert the two separate index arrays into a 2d array of [[start, end], ...] 
@@ -192,7 +223,7 @@ def torch_create_spectrogram_samples(
     spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_indices_arr]
 
     # print(f"Task: {'Create samples':<28} | Time taken: {process_time() - start_time:>9.3f} sec |")
-    return spectrogram_sample_arr, spectrogram_sample_info_arr
+    return spectrogram_sample_arr, spectrogram_sample_info_arr, audio_events_found
 
 
 #%%
@@ -323,27 +354,31 @@ def pytorch_create_samples_from_audio(
         device
     ):
     
-    spectrogram_sample_arr, spectrogram_img_info_arr = torch_create_spectrogram_samples(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, device)
+    spectrogram_sample_arr, spectrogram_img_info_arr, audio_events_found = torch_create_spectrogram_samples(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, device)
     
-    data_path = os.path.join(dataset_path, 'data')
-    samples_file_path = os.path.join(data_path, f"{sample_id}.bin")
-    # save the spectrogram samples
-    np.asarray(spectrogram_sample_arr, dtype = np.float32).tofile(samples_file_path)
+    if audio_events_found:
+        data_path = os.path.join(dataset_path, 'data')
+        samples_file_path = os.path.join(data_path, f"{sample_id}.bin")
+        # save the spectrogram samples
+        np.asarray(spectrogram_sample_arr, dtype = np.float32).tofile(samples_file_path)
 
-    
-    data_info_path = os.path.join(dataset_path, 'data_info')
-    data_info_file_path = os.path.join(data_info_path, f"{sample_id}.json")
-    # calculate the spectrogram max and min values
-    sample_max = np.max(spectrogram_sample_arr).astype(np.float32)
-    sample_min = np.min(spectrogram_sample_arr).astype(np.float32)
+        
+        data_info_path = os.path.join(dataset_path, 'data_info')
+        data_info_file_path = os.path.join(data_info_path, f"{sample_id}.json")
+        # calculate the spectrogram max and min values
+        sample_max = np.max(spectrogram_sample_arr).astype(np.float32)
+        sample_min = np.min(spectrogram_sample_arr).astype(np.float32)
 
-    with open(data_info_file_path, 'w') as f:
-        json.dump( #spectrogram_img_info_arr, f)
-            {
-                "max" : float(sample_max),
-                "min" : float(sample_min),
-                "sample_indices" : spectrogram_img_info_arr
-            }, f)
+        with open(data_info_file_path, 'w') as f:
+            json.dump( #spectrogram_img_info_arr, f)
+                {
+                    "max" : float(sample_max),
+                    "min" : float(sample_min),
+                    "sample_indices" : spectrogram_img_info_arr
+                }, f)
+
+    else:
+        print(f"No audio events found for sample {sample_id}")
 
 #%%
 def create_samples_from_audio(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  max_frequency, min_frequency, img_dim, img_step_size, event_padding_size):
@@ -525,6 +560,9 @@ if __name__ == "__main__":
 
     dataset_info = DatasetInfo()
     sample_ids = dataset_info.get_download_sample_ids(2473663, SampleRecordingType.Foreground)
+    sample_ids += dataset_info.get_download_sample_ids(9475738, SampleRecordingType.Foreground)
+
+    samples_ids = list(set(sample_ids)) # ensure that the sample ids are unique (no duplicates)
 
 
     sample_rate  = 44100
@@ -541,7 +579,7 @@ if __name__ == "__main__":
 
     create_new = False
 
-    dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}')
+    # dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'2species_samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}')
 
     # if not os.path.exists(dataset_path) or create_new:
     #     print("Building dataset")

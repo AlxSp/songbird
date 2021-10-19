@@ -35,15 +35,15 @@ class SpectrogramFileDataset(Dataset):
         self.samples_file_paths = [os.path.join(self.data_path, samples_info_path.replace(".json", ".bin")) for samples_info_path in samples_info_paths]
 
         samples_to_file_indices = [] # array to store each file's starting sample index 
-        samples_index = 0
-        for samples_info_path in samples_info_paths:
-            with open(os.path.join(self.data_info_path, samples_info_path), 'r') as f:
-                samples_to_file_indices.append(samples_index)
-                samples_in_file = len(json.load(f)["sample_indices"])
-                samples_index += samples_in_file
+        file_start_sample_index = 0  # used keep track of the first sample index of each file
+        for samples_info_path in samples_info_paths: # for each file in the data_info directory
+            with open(os.path.join(self.data_info_path, samples_info_path), 'r') as f: # open the file
+                samples_to_file_indices.append(file_start_sample_index) # add the file's starting sample index to the array
+                samples_in_file = len(json.load(f)["sample_indices"])   # get the number of samples in the file
+                file_start_sample_index += samples_in_file  # add the number of samples in the file to the file's starting sample index
                 
         self.samples_to_file_indices = np.array(samples_to_file_indices)
-        self.total_samples = samples_index
+        self.total_samples = file_start_sample_index # the total number of samples in the dataset is the sum of the number of samples in each file
 
 
     def __len__(self):
@@ -53,7 +53,7 @@ class SpectrogramFileDataset(Dataset):
     def __getitem__(self, index):
         file_index = np.abs(self.samples_to_file_indices - index).argmin() #find the closest file by checking what file's starting sample index is closest to the index
         file_index = file_index if self.samples_to_file_indices[file_index] - index <= 0 else file_index - 1 #if the file's starting sample index is larger than the index, choose the preceding file
-        file_name = self.samples_file_paths[file_index]
+        file_name = self.samples_file_paths[file_index] # get the file's name in which the sample is stored
         sample_index = index - self.samples_to_file_indices[file_index] #find the actual sample index in the file by subtracting the file's starting sample index from the index. This will be used as the offset in the file
         # print(f"index: {index} nearest file index: {file_index} file index: {self.samples_to_file_indices[file_index]} sample index: {sample_index}")
 

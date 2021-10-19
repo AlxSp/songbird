@@ -1,12 +1,12 @@
 #%%
 from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
-from songbird.audio.audio_seperation import create_and_save_dateset
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
 from songbird.nn.vae.loss import loss_function
 #from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 from songbird.nn.vae.models.conv_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 
 import os
+import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -77,7 +77,7 @@ event_padding_size = 4
 
 num_workers = 12
 
-create_new = False
+continue_training = False
 
 dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}')
 #samples_path = os.path.join(project_dir, 'data', 'spectrogram_samples', f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}.npy')
@@ -86,13 +86,21 @@ dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samp
 
 #%%
 model_name = 'conv_vae'
+
+model_dir = os.path.join(project_dir, 'models', model_name)
+if not os.path.exists(model_dir):
+    os.mkdir(model_dir)
+
+report_dir = os.path.join(project_dir, "reports", "vae", "songbird_model")
+
 model_runs_dir = os.path.join(project_dir, 'runs', model_name)
 run_dir = get_run_dir(model_runs_dir)
 
 writer = SummaryWriter(log_dir=run_dir)
 print(f"Saving run data to dir: {run_dir}")
 #%%
-report_dir = os.path.join(project_dir, "reports", "vae", "songbird_model")
+
+save_epoch_interval = 20
 
 learning_rate = 1e-4
 epochs = 400 
@@ -156,20 +164,31 @@ decoder = VariationalDecoder()
 model = VariationalAutoEncoder(encoder, decoder)
 
 writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
+
+#codes = dict(mu = list(), variance = list(), y=list())
+#%%
+optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+
+start_epoch = 0
+
+if continue_training:
+    checkpoint_files = [f for f in os.listdir(model_dir) if f.endswith('.pt')] #parse checkpoint files
+    checkpoint_epochs = [int(f.split('_e')[-1].split('.')[0]) for f in checkpoint_files] #get the epoch number from the checkpoint file name
+    newest_checkpoint_file = checkpoint_files[np.argmax(checkpoint_epochs)] #get the newest checkpoint file
+
+    checkpoint = torch.load(os.path.join(model_dir, newest_checkpoint_file))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    start_epoch = checkpoint['epoch']
 #%%
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"{'#'*3} {'Training info' + ' ':{'#'}<{24}}")
 print(f"Using {device} device for training")
 model.to(device)
 model.train()
-
-#codes = dict(mu = list(), variance = list(), y=list())
-#%%
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-
 #%%
 print(f"{'#'*3} {'Training' + ' ':{'#'}<{24}}")
-for epoch in range(0, epochs):
+for epoch in range(start_epoch, epochs):
     train_loss = 0
     test_loss = 0
     
@@ -232,6 +251,16 @@ for epoch in range(0, epochs):
             plot_num = plot_params["plot_num"], 
             report_dir = plot_params["report_dir"]
         )
+
+    if epoch != 0 and epoch % save_epoch_interval == 0:
+        torch.save( {
+            "epoch" : epoch,
+            "model_state_dict" :model.state_dict(), 
+            "optimizer_state_dict" : optimizer.state_dict(),
+            "loss" : train_loss / len(train_loader.dataset),
+
+        }, f"{model_dir}/checkpoint_e{epoch}.pt")
+        #torch.save(optimizer.state_dict(), f"{model_dir}/optimizer_{epoch}.pt")
 
     print()
 #%%
