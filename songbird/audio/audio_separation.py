@@ -247,22 +247,41 @@ def create_train_test_indices(sample_slice_indices_arr, sample_dim, sampling_ste
     additional_samples_to_remove_per_test_sample = overlapping_sample_num * 2 # since both the preceding and following samples are overlapping the number of samples to remove is twice the number of 'overlapping' samples
     test_samples_num = int(samples_num / ((1-test_split)/test_split + 1 + additional_samples_to_remove_per_test_sample)) # minimum number of test samples. Since the the overlapping samples will be removed from the train set, the overlapping samples have to be accounted for in the test size calculation
     all_indices = np.arange(samples_num)
+    
+    if test_samples_num == 0:
+        return all_indices, np.array([])
     # TODO: the test_samples_num could be better calculated by taking into account consecutive indices and sampling_padding_size
     consecutive_indices_arr = np.split(all_indices, np.where(np.diff(sample_slice_indices_arr[:,0]) != sampling_step_size)[0] + 1) #split the indices into consecutive indices
     # we don't want to include samples created in the padding area of an event as they may not have useful data regarding the event. Thus we slice each consecutive index array to remove the padding area. On the end of the array we remove the padding size plus the number of samples that 
     # will be removed when taking a one test sample. This also prevents taking a section that overlaps two events.
-    # TODO: currently events that are too small will not be included in the test set. May miss out on unique events that are usually very small. 
-    consecutive_non_padded_indices_arr = np.asarray([index for consecutive_indices in consecutive_indices_arr for index in consecutive_indices[sampling_padding_size:-(sampling_padding_size + additional_samples_to_remove_per_test_sample + 1)]]) #get the non padded indices. 
-    test_indices_arr = np.random.choice(consecutive_non_padded_indices_arr, test_samples_num, replace = False) #get the test indices
-    
-    indices_to_remove_from_train_set = np.concatenate([np.arange(index, index + additional_samples_to_remove_per_test_sample + 1) for index in test_indices_arr]) #get the indices to remove from the train set
+    consecutive_testable_indices_arr = []
+    for consecutive_indices in consecutive_indices_arr:
+        indices = consecutive_indices[sampling_padding_size:-(sampling_padding_size + additional_samples_to_remove_per_test_sample + 1)]
+        if indices.size != 0:
+            consecutive_testable_indices_arr += [[index, index + additional_samples_to_remove_per_test_sample + 1] for index in indices]
+        else:
+            indices = consecutive_indices[:-(additional_samples_to_remove_per_test_sample + 1)]
+            if indices.size != 0:
+                consecutive_testable_indices_arr += [[index, index + additional_samples_to_remove_per_test_sample + 1] for index in indices]
+            else:
+                consecutive_testable_indices_arr += [[consecutive_indices[0], consecutive_indices[-1]]]
+
+    if not consecutive_testable_indices_arr:
+        raise ValueError("No valid indices found")
+            
+    #consecutive_non_padded_indices_arr = np.asarray([index for consecutive_indices in consecutive_indices_arr for index in consecutive_indices[sampling_padding_size:-(sampling_padding_size + additional_samples_to_remove_per_test_sample + 1)] if sampling_padding_size + additional_samples_to_remove_per_test_sample + 1 < len(consecutive_indices) else consecutive_indices[sampling_padding_size:-(sampling_padding_size + additional_samples_to_remove_per_test_sample + 1)]]) #get the non padded indices. 
+    random_indices = np.random.choice(len(consecutive_testable_indices_arr), test_samples_num, replace = False) #get random indices to create test samples
+    #test_indices_arr = np.random.choice(consecutive_testable_indices_arr, test_samples_num, replace = False) #get the test indices
+    test_indices_arr = np.asarray(consecutive_testable_indices_arr)[random_indices]
+    # TODO: initialize indices_to_remove_from_train_set with numpy array since the shape is already known
+    indices_to_remove_from_train_set = np.concatenate([np.arange(remove_index_range[0], remove_index_range[1]) for remove_index_range in test_indices_arr]) #get the indices to remove from the train set
     train_selection = np.ones(samples_num, dtype = bool)
     train_selection[indices_to_remove_from_train_set] = False #remove the indices from the train set
 
     train_indices_arr = all_indices[train_selection] #get the train indices
-    test_indices_arr = test_indices_arr + overlapping_sample_num #get the test indices
+    test_indices_arr = test_indices_arr[:,0] + overlapping_sample_num * (test_indices_arr[:,1] - test_indices_arr[:,0] == additional_samples_to_remove_per_test_sample + 1) #get the test indices
     
-    if (train_indices_arr == test_indices_arr).any() != False: #make sure the train and test indices are not the same
+    if np.any(np.in1d(train_indices_arr, test_indices_arr)): #make sure the train and test indices are not the same
         raise ValueError(f"Train and test indices are the same. Number of indices that appear in both sets `{(train_indices_arr == test_indices_arr).sum()}`")
         
     return train_indices_arr, test_indices_arr
@@ -303,19 +322,10 @@ def pytorch_create_samples_from_audio(
             train_indices, test_indices = create_train_test_indices(sample_slice_indices_arr, sample_dim, sampling_step_size, sampling_padding_size, test_split = validation_split)
             
             np.asarray(spectrogram_sample_arr[train_indices], dtype = np.float32).tofile(train_samples_file_path)
-            np.asarray(spectrogram_sample_arr[test_indices], dtype = np.float32).tofile(test_samples_file_path)
-            
-            train_slice_indices_arr = sample_slice_indices_arr[train_indices]
-            test_slice_indices_arr = sample_slice_indices_arr[test_indices]
-            
-            train_data_info_path = os.path.join(dataset_path, 'data_info')
+            train_data_info_path = os.path.join(dataset_path, 'train', 'data_info')
             train_data_info_file_path = os.path.join(train_data_info_path, f"{sample_id}.json")
             
-            test_data_info_path = os.path.join(dataset_path, 'data_info')
-            test_data_info_file_path = os.path.join(test_data_info_path, f"{sample_id}.json")     
-            
             train_spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_indices_arr[train_indices]]
-            test_spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_indices_arr[test_indices]]
             
             with open(train_data_info_file_path, 'w') as f:
                 json.dump( #spectrogram_img_info_arr, f)
@@ -324,15 +334,23 @@ def pytorch_create_samples_from_audio(
                         "min" : float(sample_min),
                         "sample_indices" : train_spectrogram_sample_info_arr
                     }, f)
+                
+            if test_indices.size != 0:
+                np.asarray(spectrogram_sample_arr[test_indices], dtype = np.float32).tofile(test_samples_file_path)
+                            
+                test_data_info_path = os.path.join(dataset_path, 'test', 'data_info')
+                test_data_info_file_path = os.path.join(test_data_info_path, f"{sample_id}.json")     
             
-            with open(test_spectrogram_sample_info_arr, 'w') as f:
-                json.dump( #spectrogram_img_info_arr, f)
-                    {
-                        "max" : float(sample_max),
-                        "min" : float(sample_min),
-                        "sample_indices" : test_spectrogram_sample_info_arr
-                    }, f)
+                test_spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_indices_arr[test_indices]]
             
+                with open(test_data_info_file_path, 'w') as f:
+                    json.dump( #spectrogram_img_info_arr, f)
+                        {
+                            "max" : float(sample_max),
+                            "min" : float(sample_min),
+                            "sample_indices" : test_spectrogram_sample_info_arr
+                        }, f)
+                                
         else:
             data_path = os.path.join(dataset_path, 'data')
             samples_file_path = os.path.join(data_path, f"{sample_id}.bin")
@@ -346,13 +364,13 @@ def pytorch_create_samples_from_audio(
 
             spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_indices_arr]
         
-        with open(data_info_file_path, 'w') as f:
-            json.dump( #spectrogram_img_info_arr, f)
-                {
-                    "max" : float(sample_max),
-                    "min" : float(sample_min),
-                    "sample_indices" : spectrogram_sample_info_arr
-                }, f)
+            with open(data_info_file_path, 'w') as f:
+                json.dump( #spectrogram_img_info_arr, f)
+                    {
+                        "max" : float(sample_max),
+                        "min" : float(sample_min),
+                        "sample_indices" : spectrogram_sample_info_arr
+                    }, f)
 
     else:
         print(f"No audio events found for sample {sample_id}")
@@ -430,33 +448,89 @@ def pytorch_create_and_save_dateset(
     min_value = np.inf
     samples_count = 0
 
-    for data_info_file in os.listdir(data_info_path): 
-        with open(os.path.join(data_info_path, data_info_file), 'r') as f:
-            data_info = json.load(f)
-            max_value = max(max_value, data_info['max'])
-            min_value = min(min_value, data_info['min'])
-            samples_count += len(data_info['sample_indices'])
+    if validation_split > 0.0:
+        for data_info_file in os.listdir(train_data_info_path): 
+            with open(os.path.join(train_data_info_path, data_info_file), 'r') as f:
+                data_info = json.load(f)
+                max_value = max(max_value, data_info['max'])
+                min_value = min(min_value, data_info['min'])
+                samples_count += len(data_info['sample_indices'])
+                
+        for data_info_file in os.listdir(test_data_info_path): 
+            with open(os.path.join(test_data_info_path, data_info_file), 'r') as f:
+                data_info = json.load(f)
+                max_value = max(max_value, data_info['max'])
+                min_value = min(min_value, data_info['min'])
+                samples_count += len(data_info['sample_indices'])
+        
+                
+        end_time = datetime.now()
 
-    end_time = datetime.now()
+        with open(os.path.join(os.path.join(dataset_path, 'train'), 'dataset_attributes.json'), 'w') as f:
+            json.dump({
+                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "time_taken_sec" : (end_time - start_time).total_seconds(),
+                "samples_count" : samples_count,
+                "sample_dim" : list(sample_dim),
+                "max_value" : float(max_value),
+                "min_value" : float(min_value),
+                "parameters" : {
+                    "sample_rate" : sample_rate,
+                    "stft_window_size" : stft_window_size,
+                    "stft_step_size" : stft_step_size,
+                    "frequency_range_size" : frequency_range_size,
+                    "lower_frequency_margin" : lower_frequency_margin,
 
-    with open(os.path.join(dataset_path, 'dataset_attributes.json'), 'w') as f:
-        json.dump({
-            "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "time_taken_sec" : (end_time - start_time).total_seconds(),
-            "samples_count" : samples_count,
-            "sample_dim" : list(sample_dim),
-            "max_value" : float(max_value),
-            "min_value" : float(min_value),
-            "parameters" : {
-                "sample_rate" : sample_rate,
-                "stft_window_size" : stft_window_size,
-                "stft_step_size" : stft_step_size,
-                "frequency_range_size" : frequency_range_size,
-                "lower_frequency_margin" : lower_frequency_margin,
+                }
+            }, f, indent=2)
+            
+        with open(os.path.join(os.path.join(dataset_path, 'test'), 'dataset_attributes.json'), 'w') as f:
+            json.dump({
+                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "time_taken_sec" : (end_time - start_time).total_seconds(),
+                "samples_count" : samples_count,
+                "sample_dim" : list(sample_dim),
+                "max_value" : float(max_value),
+                "min_value" : float(min_value),
+                "parameters" : {
+                    "sample_rate" : sample_rate,
+                    "stft_window_size" : stft_window_size,
+                    "stft_step_size" : stft_step_size,
+                    "frequency_range_size" : frequency_range_size,
+                    "lower_frequency_margin" : lower_frequency_margin,
 
-            }
-        }, f, indent=2)
+                }
+            }, f, indent=2)
+    else:
+        for data_info_file in os.listdir(data_info_path): 
+            with open(os.path.join(data_info_path, data_info_file), 'r') as f:
+                data_info = json.load(f)
+                max_value = max(max_value, data_info['max'])
+                min_value = min(min_value, data_info['min'])
+                samples_count += len(data_info['sample_indices'])
+
+        end_time = datetime.now()
+
+        with open(os.path.join(dataset_path, 'dataset_attributes.json'), 'w') as f:
+            json.dump({
+                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "time_taken_sec" : (end_time - start_time).total_seconds(),
+                "samples_count" : samples_count,
+                "sample_dim" : list(sample_dim),
+                "max_value" : float(max_value),
+                "min_value" : float(min_value),
+                "parameters" : {
+                    "sample_rate" : sample_rate,
+                    "stft_window_size" : stft_window_size,
+                    "stft_step_size" : stft_step_size,
+                    "frequency_range_size" : frequency_range_size,
+                    "lower_frequency_margin" : lower_frequency_margin,
+
+                }
+            }, f, indent=2)
 
 if __name__ == "__main__":
     project_dir = os.getcwd()
@@ -465,8 +539,9 @@ if __name__ == "__main__":
     dataset_info = DatasetInfo()
     sample_ids = dataset_info.get_download_sample_ids(2473663, SampleRecordingType.Foreground)
     sample_ids += dataset_info.get_download_sample_ids(9475738, SampleRecordingType.Foreground)
+    sample_ids += dataset_info.get_download_sample_ids(2482593, SampleRecordingType.Foreground)
 
-    sample_ids = list(set(sample_ids))[:1] # ensure that the sample ids are unique (no duplicates)
+    sample_ids = list(set(sample_ids)) # ensure that the sample ids are unique (no duplicates)
 
     create_new = False
 

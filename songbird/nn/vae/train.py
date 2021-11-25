@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 def show_x_vs_y_samples(x, y, sample_dim, tile=None, column_headers = [], row_headers = [], fig_num = 1, plot_num = 4, report_dir = None):
     for fig_index in range(fig_num):
         plot_num = min(len(x), plot_num)
-        
+
         fig, axes = plt.subplots(nrows = 2, ncols = plot_num, squeeze=False, sharex=True, sharey=True)
         fig.suptitle(f"{tile} - Real Data (X) vs Reconstruction (X Hat)")
         in_pic = x.data.cpu().view(-1, *sample_dim)
@@ -79,9 +79,10 @@ num_workers = 12
 
 continue_training = False
 
-dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}')
-#samples_path = os.path.join(project_dir, 'data', 'spectrogram_samples', f'samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}.npy')
+# dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}')
 
+trainset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}', 'train')
+testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}', 'test')
 
 
 #%%
@@ -103,7 +104,7 @@ print(f"Saving run data to dir: {run_dir}")
 save_epoch_interval = 20
 
 learning_rate = 1e-4
-epochs = 400 
+epochs = 400
 batch_size = 256
 
 val_percentage = 0.05
@@ -127,7 +128,7 @@ writer.add_hparams(
         "data_processing/img_step_size" : img_step_size,  # (time)
         "data_processing/event_padding_size" : event_padding_size
     }, **{f'data_processing/img_dim_{i}': v for i, v in enumerate(img_dim)})
-    
+
 )
 
 plot_params = {
@@ -137,26 +138,27 @@ plot_params = {
 }
 
 # %%
-if not os.path.exists(dataset_path):
+if not os.path.exists(trainset_path):
     print("Dataset not found. Check if path is correct")
     exit()
 else:
-    print(f"Dataset found. Loading dataset from {dataset_path}")
+    print(f"Dataset found. Loading dataset from {trainset_path}")
 # %%
-spectrogram_dataset = SpectrogramFileDataset(dataset_path, transform=ToTensor())
+train_set = SpectrogramFileDataset(trainset_path, transform=ToTensor())
+test_set = SpectrogramFileDataset(testset_path, transform=ToTensor())
 print(f"{'#'*3} {'Dataset info' + ' ':{'#'}<{24}}")
-print(f"Total dataset length: {len(spectrogram_dataset)}")
+print(f"Total dataset length: {len(train_set) + len(test_set)}")
 
 #%%
-train_size = int(len(spectrogram_dataset) * (1 - val_percentage))
-test_size = len(spectrogram_dataset) - train_size #int(len(spectrogram_dataset) * val_percentage)
-train_set, val_set = torch.utils.data.random_split(spectrogram_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(random_seed))
+# train_size = int(len(spectrogram_dataset) * (1 - val_percentage))
+# test_size = len(spectrogram_dataset) - train_size #int(len(spectrogram_dataset) * val_percentage)
+# train_set, val_set = torch.utils.data.random_split(spectrogram_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(random_seed))
 
 # %%
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=12)
-test_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=12)
+test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=12)
 #%%
-print(f"Train length: {train_size} Test length: {test_size}")
+print(f"Train length: {len(train_set)} Test length: {len(test_set)}")
 print(f"Train batch num: {len(train_loader)} Test batch num: {len(test_loader)}")
 # %%
 encoder = VariationalEncoder()
@@ -191,21 +193,21 @@ print(f"{'#'*3} {'Training' + ' ':{'#'}<{24}}")
 for epoch in range(start_epoch, epochs):
     train_loss = 0
     test_loss = 0
-    
+
     train_samples_count = 0
     if epoch > 0:
         model.train()
         for batch, _, _ in train_loader:
-            
+
             batch = batch.to(device)
             x_hat, mu, logvar = model(batch)
-            
+
             loss = loss_function(x_hat, batch, mu, logvar)
             train_loss += loss.item()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+
             train_samples_count += len(batch)
             print(f"epoch: {epoch:5} | train loss: {train_loss / train_samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 
@@ -237,25 +239,25 @@ for epoch in range(start_epoch, epochs):
             val_x_hat = x_hat
 
         print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
-        
+
         writer.add_scalar("Loss/test", test_loss / len(test_loader.dataset), epoch)
 
         show_x_vs_y_samples(
-            val_x, 
-            val_x_hat, 
-            sample_dim = img_dim, 
-            tile = f'Epoch_{epoch}', 
-            column_headers = [f"file: {os.path.splitext(os.path.basename(file_path))[0]}\nsample: {sample_index}" for file_path, sample_index in zip(file_paths, sample_indices)], 
-            row_headers = ["X", "X Hat"], 
-            fig_num = 1, 
-            plot_num = plot_params["plot_num"], 
+            val_x,
+            val_x_hat,
+            sample_dim = img_dim,
+            tile = f'Epoch_{epoch}',
+            column_headers = [f"file: {os.path.splitext(os.path.basename(file_path))[0]}\nsample: {sample_index}" for file_path, sample_index in zip(file_paths, sample_indices)],
+            row_headers = ["X", "X Hat"],
+            fig_num = 1,
+            plot_num = plot_params["plot_num"],
             report_dir = plot_params["report_dir"]
         )
 
     if epoch != 0 and epoch % save_epoch_interval == 0:
         torch.save( {
             "epoch" : epoch,
-            "model_state_dict" :model.state_dict(), 
+            "model_state_dict" :model.state_dict(),
             "optimizer_state_dict" : optimizer.state_dict(),
             "loss" : train_loss / len(train_loader.dataset),
 

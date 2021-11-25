@@ -85,6 +85,9 @@
 
         If this argument is given, the **dataset/raw/** directory will be completely emptied before samples are downloaded
 
+    * **download_delay <float_value>**
+
+        Include this argument with a float representing the seconds of delay between each download
 ----
 
 ### audio/
