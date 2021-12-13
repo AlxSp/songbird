@@ -7,33 +7,11 @@ import os
 import requests
 import shutil
 import sys
+from tqdm import tqdm
 
 this_file_dir = os.path.dirname(os.path.abspath(__file__)) #absolute path to this file's directory
 project_base_dir = os.path.dirname(os.path.dirname(this_file_dir)) #path to base dir of project
 data_dir = os.path.join(project_base_dir, 'data')  #path to data_dir
-
-class ProgressBar:
-    def __init__(self, number_of_samples, bar_length = 50):
-        self.number_of_samples = number_of_samples
-        self.bar_length = bar_length
-        self.progress_count = 0 
-        self.bar_string = '> [{0:' + str(bar_length) + '}] | {1}/{2} | etc: {3:.0f}:{4:.0f}:{5:.0f}'
-        
-        self.start_time = None
-        self.mean_time_sec = None
-        self.progress_initiated = False
-
-    def progress(self, increase_by = 1):
-        self.progress_count += increase_by
-        if not self.progress_initiated:
-            self.progress_initiated = True
-            self.start_time = datetime.datetime.now()
-        self.mean_time_sec = (datetime.datetime.now() - self.start_time).total_seconds() / self.progress_count * (self.number_of_samples - self.progress_count)
-
-    def print(self):
-        min, sec = divmod(self.mean_time_sec, 60)
-        hr, min = divmod(min, 60)
-        print(self.bar_string.format('#' * int(self.progress_count / self.number_of_samples * self.bar_length) , self.progress_count, self.number_of_samples, hr, min, sec), end="\r", flush=True )
 
 def get_species_sample_ids(species_sample_info : dict, species_key_list : list):
     return {key: species_sample_info[key] for key in species_key_list}
@@ -42,48 +20,63 @@ def filter_species_samples(species_sample_ids : dict, include_background_samples
     '''
     uses the species_sample_ids dict 
     '''
+    sample_ids_to_download = []
+    
     #for each species trim the samples to the sample download limit
     for species_key, sample_dict in species_sample_ids.items():
         species_samples_num = 0
         #if sample download limit is set
-        if sample_limit is not None:
-            if len(sample_dict['forefront_sample_ids']) >= sample_limit: #if there are more forefront samples than the limit
-                sample_dict['forefront_sample_ids'] = sample_dict['forefront_sample_ids'][0:sample_limit] #get number of forefront samples according to the limit
-                sample_dict['background_sample_ids'] = [] #set background samples to 0
-                species_samples_num = sample_limit
-            elif include_background_samples:    #if there are not enough forefront samples and include background samples is true 
-                species_samples_num = len(sample_dict['forefront_sample_ids'])
-                number_background_samples = sample_limit - species_samples_num #compute how many background samples are needed to meet limit
-                #make sure remaining sample number does not exceed number of background samples
-                number_background_samples = len(sample_dict['background_sample_ids']) if number_background_samples > len(sample_dict['background_sample_ids']) else number_background_samples
-                sample_dict['background_sample_ids'] = sample_dict['background_sample_ids'][0:number_background_samples] #keep background samples
-                species_samples_num += number_background_samples
-            else: #else include all available forefront samples
-                sample_dict['background_sample_ids'] = [] 
-                species_samples_num = len(sample_dict['forefront_sample_ids'])
+        foreground_sample_count = len(sample_dict["forefront_sample_ids"])
+        background_sample_count = len(sample_dict["background_sample_ids"])
+        print(f'{"-" * 20} {species_key} {"-" * 20}')
+        print(f'Found a total of {foreground_sample_count + background_sample_count:>6} samples for species with key "{species_key}"')
+        print(f'Foreground samples: {foreground_sample_count:>6}')
+        print(f'Background samples: {background_sample_count:>6}')
+        
+        already_downloaded_foreground_sample_ids_for_species = set(sample_dict["forefront_sample_ids"]).intersection(already_downloaded_sample_ids)
+        already_downloaded_background_sample_ids_for_species = set(sample_dict["background_sample_ids"]).intersection(already_downloaded_sample_ids)
+        
+        if already_downloaded_foreground_sample_ids_for_species: print(f'Downloaded foreground samples: {len(already_downloaded_foreground_sample_ids_for_species)}')
+        if already_downloaded_background_sample_ids_for_species: print(f'Downloaded background samples: {len(already_downloaded_background_sample_ids_for_species)}')
+        
+        species_foreground_sample_ids_to_download = list(set(sample_dict["forefront_sample_ids"]).difference(already_downloaded_foreground_sample_ids_for_species))
+        species_background_sample_ids_to_download = list(set(sample_dict["background_sample_ids"]).difference(already_downloaded_background_sample_ids_for_species))
+        
+        if not species_foreground_sample_ids_to_download and not species_background_sample_ids_to_download:
+            print(f'No more samples to download for species with key "{species_key}"')
         else:
-            species_samples_num = len(sample_dict['forefront_sample_ids']) + len(sample_dict['background_sample_ids'])
+            print(f'Foreground samples to download: {len(species_foreground_sample_ids_to_download)}')
+            print(f'Background samples to download: {len(species_background_sample_ids_to_download)}')
+            
+            species_samples_to_download = []
+            
+            if sample_limit is not None:
+                if len(species_foreground_sample_ids_to_download) >= sample_limit: #if there are more forefront samples than the limit
+                    species_samples_to_download = species_foreground_sample_ids_to_download[:sample_limit] #get number of forefront samples according to the limit
+                elif include_background_samples:    #if there are not enough forefront samples and include background samples is true 
+                    number_of_background_samples_to_download = sample_limit - len(species_foreground_sample_ids_to_download) #compute how many background samples are needed to meet limit
+                    species_samples_to_download = species_foreground_sample_ids_to_download + species_background_sample_ids_to_download[:number_of_background_samples_to_download] #get number of background samples according to the limit
+                else: #else include all available forefront samples
+                    species_samples_to_download = species_foreground_sample_ids_to_download
+            elif include_background_samples:
+                species_samples_to_download = species_foreground_sample_ids_to_download + species_background_sample_ids_to_download
+            else:
+                species_samples_to_download = species_foreground_sample_ids_to_download
+            
+            print(f'Total samples to download: {len(species_samples_to_download)}')
+            
+            sample_ids_to_download += species_samples_to_download
 
-        print('Found {:>6} samples for species with key "{}"'.format(species_samples_num, species_key))
-
-    #collect all samples into one list
-    sample_ids_to_download = []
-    for species_key, sample_dict in species_sample_ids.items():
-        sample_ids_to_download += sample_dict['forefront_sample_ids']
-        sample_ids_to_download += sample_dict['background_sample_ids']
     #remove duplicates from list
-    sample_ids_to_download = set(sample_ids_to_download)
+    sample_ids_to_download = list(set(sample_ids_to_download))
     #remove samples that have already been dowloaded
-    sample_ids_to_download = list(sample_ids_to_download.difference(already_downloaded_sample_ids))
 
     return species_sample_ids, sample_ids_to_download
     
 def download_by_sample_ids(sample_ids : list, samples_metadata : dict, destination_path, download_delay_sec = 0.0):
-    progress_bar = ProgressBar(len(sample_ids))
-    
     failed_to_download_sample_ids = []
 
-    for sample_id in sample_ids:
+    for sample_id in tqdm(sample_ids, total=len(sample_ids), desc='Downloading samples'):
         file_path = os.path.join(destination_path, str(sample_id) + '.mp3')
         url_link = samples_metadata[sample_id]['recording_link']
 
@@ -111,8 +104,6 @@ def download_by_sample_ids(sample_ids : list, samples_metadata : dict, destinati
             failed_to_download_sample_ids.append(sample_id)
         
         time.sleep(download_delay_sec)
-        progress_bar.progress()
-        progress_bar.print()
 
     return failed_to_download_sample_ids
 
@@ -364,7 +355,7 @@ if __name__ == "__main__":
                             help =  'Add keys of specific species which samples should be downloaded. \
                                     If this argument is given only samples for these species will be downloaded.')
 
-    parser.add_argument('--include_background_samples', required=False, action='store_true', 
+    parser.add_argument('--include_background_samples', required=False, action='store_true', default=False,
                             help =  'if this argument is set, background samples are included in the \
                                     species samples and sample min argument and will be downloaded after all forefront samples (if download max has not been reached) \
                                     This argument is only valid when the --all or --use_species_keys argument is given')
@@ -411,7 +402,7 @@ if __name__ == "__main__":
             print("Reseting '{}' dir".format(raw_data_path))
             empty_or_create_dir(raw_data_path)
             try:    # try to remove the files if they exist
-                os.remove(download_species_sample_info_file_path)
+                os.remove(0)
                 os.remove(failed_to_download_sample_ids_file_path)
             except:
                 pass 

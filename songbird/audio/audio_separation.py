@@ -407,19 +407,21 @@ def pytorch_create_and_save_dateset(
     if validation_split > 0.0:
         train_data_path = os.path.join(dataset_path, 'train', 'data')
         train_data_info_path = os.path.join(dataset_path, 'train', 'data_info')
-
-        test_data_path = os.path.join(dataset_path, 'test', 'data')
-        test_data_info_path = os.path.join(dataset_path, 'test', 'data_info')
-
+        
         os.makedirs(train_data_path)
         os.makedirs(train_data_info_path)
+
+        
+        test_data_path = os.path.join(dataset_path, 'test', 'data')
+        test_data_info_path = os.path.join(dataset_path, 'test', 'data_info')
         
         os.makedirs(test_data_path)
         os.makedirs(test_data_info_path)
+        
     else:
         data_path = os.path.join(dataset_path, 'data')
         data_info_path = os.path.join(dataset_path, 'data_info')
-
+        
         os.makedirs(data_path)
         os.makedirs(data_info_path)
 
@@ -537,9 +539,12 @@ if __name__ == "__main__":
 
 
     dataset_info = DatasetInfo()
-    sample_ids = dataset_info.get_download_sample_ids(2473663, SampleRecordingType.Foreground)
-    sample_ids += dataset_info.get_download_sample_ids(9475738, SampleRecordingType.Foreground)
-    sample_ids += dataset_info.get_download_sample_ids(2482593, SampleRecordingType.Foreground)
+    
+    dataset_info.describe_downloaded_samples()
+    
+    sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
+    sample_ids += dataset_info.get_downloaded_species_sample_ids(9475738, SampleRecordingType.Foreground)
+    sample_ids += dataset_info.get_downloaded_species_sample_ids(2482593, SampleRecordingType.Foreground)
 
     sample_ids = list(set(sample_ids)) # ensure that the sample ids are unique (no duplicates)
 
@@ -567,6 +572,7 @@ if __name__ == "__main__":
     device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt_samples_0d{sample_dim[0]}_1d{sample_dim[1]}_iss{sampling_step_size}')
+    print(f"Dataset set will be stored at: {dataset_path}")
     print("Building dataset")
         #create_and_return_dataset(sample_ids[:12], sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, sample_dim, sampling_step_size, sampling_padding_size)
     pytorch_create_and_save_dateset(dataset_path, sample_ids, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, num_workers=num_workers, device = device)

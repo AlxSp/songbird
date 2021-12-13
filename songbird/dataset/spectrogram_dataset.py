@@ -58,7 +58,7 @@ class SpectrogramFileDataset(Dataset):
         # print(f"index: {index} nearest file index: {file_index} file index: {self.samples_to_file_indices[file_index]} sample index: {sample_index}")
 
         #read the binary file with the sample index as the offset times the size of a sample in bytes. Read in the amount of floats that make up one sample. Reshape the sample into the it's original shape
-        sample = np.fromfile(self.samples_file_paths[file_index], offset = sample_index * self.sample_byte_size, dtype = np.float32, count = np.prod(self.sample_dim)).reshape(self.sample_dim)
+        sample = np.fromfile(self.samples_file_paths[file_index], offset = sample_index * self.sample_byte_size, dtype = np.float32, count = np.prod(self.sample_dim)).reshape(self.sample_dim) # TODO: apparently np.fromfile is slow, look into alternatives
         sample = (sample - self.dataset_attributes["min_value"]) / (self.dataset_attributes["max_value"] - self.dataset_attributes["min_value"]) #normalize the sample
 
         if self.transform:

@@ -3,7 +3,7 @@ from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
 from songbird.nn.vae.loss import loss_function
 #from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
-from songbird.nn.vae.models.conv_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 
 import os
 import numpy as np
@@ -61,7 +61,7 @@ def get_run_dir(model_runs_dir, prefix = 'run'):
     return run_dir
 #%%
 dataset_info = DatasetInfo()
-sample_ids = dataset_info.get_download_sample_ids(2473663, SampleRecordingType.Foreground)
+sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
 
 project_dir = os.getcwd()
 
@@ -86,7 +86,7 @@ testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt
 
 
 #%%
-model_name = 'conv_vae'
+model_name = 'res_vae'
 
 model_dir = os.path.join(project_dir, 'models', model_name)
 if not os.path.exists(model_dir):

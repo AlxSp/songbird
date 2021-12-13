@@ -30,17 +30,76 @@ class DatasetInfo:
     def __init__(self, dataset_info_dir = None) -> None:
         self.dataset_info_dir = os.path.join(data_dir, self._dataset_info_dir) if dataset_info_dir is None else dataset_info_dir
 
-        with open(os.path.join(self.dataset_info_dir, self._downloaded_samples_file)) as f:
-            self.downloaded_samples = json.load(f)
-        with open(os.path.join(self.dataset_info_dir, self._failed_to_download_sample_ids_file)) as f:
-            self.failed_to_download_sample_ids = f.read().split(',')
         with open(os.path.join(self.dataset_info_dir, self._samples_metadata_file)) as f:
             self.samples_metadata = json.load(f)
+            
+        self.downloaded_species_samples_dict = self._create_downloaded_species_samples_dict(os.path.join(data_dir, 'raw'), self.samples_metadata)
+        
+        with open(os.path.join(self.dataset_info_dir, self._failed_to_download_sample_ids_file)) as f:
+            self.failed_to_download_sample_ids = f.read().split(',')
         with open(os.path.join(self.dataset_info_dir, self._species_info_file)) as f:
             self.species_info = f.read().split('\n')
 
-
-    def get_download_sample_ids(self, species_id: int, sample_recording_type: SampleRecordingType = None) -> list:
+    def _create_downloaded_species_samples_dict(self, raw_samples_dir: str, samples_metadata_dict) -> Dict:
+        """
+        Load the downloaded samples file and also check the raw directory for files that are not in the downloaded file.
+        :param downloaded_samples_file: downloaded samples file
+        :return: downloaded samples
+        """
+        downloaded_species_samples_dict = {}
+        
+        downloaded_sample_id_arr = [file_id.split('.')[0] for file_id in os.listdir(raw_samples_dir)]
+        
+        print(f"Found {len(downloaded_sample_id_arr)} downloaded samples.")
+            
+        for sample_id in downloaded_sample_id_arr:
+            foreground_species_key = samples_metadata_dict[sample_id]['forefront_bird_key']
+            if not foreground_species_key in downloaded_species_samples_dict:
+                downloaded_species_samples_dict[foreground_species_key] = {
+                    SampleRecordingType.Foreground.value: [sample_id], 
+                    SampleRecordingType.Background.value: []
+                }
+            else:
+                downloaded_species_samples_dict[foreground_species_key][SampleRecordingType.Foreground.value].append(sample_id)
+                
+            background_species_key_arr = samples_metadata_dict[sample_id]['background_birds_keys']
+            
+            for background_species_key in background_species_key_arr:
+                if not background_species_key in downloaded_species_samples_dict:
+                    downloaded_species_samples_dict[background_species_key] = {
+                        SampleRecordingType.Foreground.value: [], 
+                        SampleRecordingType.Background.value: [sample_id]
+                    }
+                else:
+                    downloaded_species_samples_dict[background_species_key][SampleRecordingType.Background.value].append(sample_id)
+                    
+        return downloaded_species_samples_dict
+     
+    def describe_downloaded_samples(self) -> None:
+        """
+        Prints a description of the downloaded samples.
+        :return: None
+        """
+        species_with_foreground_samples = []
+        species_with_background_samples = []
+        show_top_n = 10
+        
+        for species_key in self.downloaded_species_samples_dict:
+            number_of_foreground_samples = len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Foreground.value])
+            number_of_background_samples = len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Background.value])
+            if number_of_foreground_samples > 0:
+                species_with_foreground_samples.append((species_key, number_of_foreground_samples))
+            if number_of_background_samples > 0:
+                species_with_background_samples.append((species_key, number_of_background_samples))
+            
+        species_with_foreground_samples.sort(key=lambda x: x[1], reverse=True)
+        
+        print(f"Samples for {len(species_with_foreground_samples)} species with foreground recordings")
+        print(f"The top {show_top_n} species with foreground recordings:")
+        for i in range(show_top_n):
+            print(f"Species key: {species_with_foreground_samples[i][0]} Number of samples: {species_with_foreground_samples[i][1]}")
+            
+    def get_downloaded_species_sample_ids(self, species_key: int, sample_recording_type: SampleRecordingType = None) -> list:
         """
         Get a list of sample ids for a given species.
         :param species_id: species id
@@ -49,16 +108,26 @@ class DatasetInfo:
         """
         
         try:
-            species_id = str(species_id)
             if sample_recording_type is None:
-                return self.downloaded_samples[species_id][SampleRecordingType.Foreground.value] + self.downloaded_samples[species_id][SampleRecordingType.Background.value]
+                print(f"Species key: {species_key} - Downloaded samples: {len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Foreground.value]) + len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Background.value])}")
+                return self.downloaded_species_samples_dict[species_key][SampleRecordingType.Foreground.value] + self.downloaded_species_samples_dict[species_key][SampleRecordingType.Background.value]
             else:
-                return self.downloaded_samples[species_id][sample_recording_type.value]
+                print(f"Species key: {species_key} - {sample_recording_type.value} - Downloaded samples: {len(self.downloaded_species_samples_dict[species_key][sample_recording_type.value])}")
+                return self.downloaded_species_samples_dict[species_key][sample_recording_type.value]
 
         except Exception as e:
             print(f"Error retrieving sample ids! Error: {e}")
+            
+    def get_file_metadata(self, file_id: str) -> Dict:
+        """
+        Get the metadata of a given file.
+        :param file_id: file id
+        :return: metadata of file
+        """
+        return self.samples_metadata[file_id]
+        
 
 
 if __name__ == "__main__":
     dataset_info = DatasetInfo()
-    #print(dataset_info.get_download_sample_ids(1))
+    #print(dataset_info.get_downloaded_species_sample_ids(1))
