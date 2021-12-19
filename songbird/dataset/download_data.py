@@ -20,53 +20,58 @@ def filter_species_samples(species_sample_ids : dict, include_background_samples
     '''
     uses the species_sample_ids dict 
     '''
-    sample_ids_to_download = []
+    padding_width = 12
     
+    sample_ids_to_download = []
+    print(f"Gathering sample ids to download")
     #for each species trim the samples to the sample download limit
     for species_key, sample_dict in species_sample_ids.items():
-        species_samples_num = 0
         #if sample download limit is set
         foreground_sample_count = len(sample_dict["forefront_sample_ids"])
         background_sample_count = len(sample_dict["background_sample_ids"])
-        print(f'{"-" * 20} {species_key} {"-" * 20}')
-        print(f'Found a total of {foreground_sample_count + background_sample_count:>6} samples for species with key "{species_key}"')
-        print(f'Foreground samples: {foreground_sample_count:>6}')
-        print(f'Background samples: {background_sample_count:>6}')
         
         already_downloaded_foreground_sample_ids_for_species = set(sample_dict["forefront_sample_ids"]).intersection(already_downloaded_sample_ids)
         already_downloaded_background_sample_ids_for_species = set(sample_dict["background_sample_ids"]).intersection(already_downloaded_sample_ids)
         
-        if already_downloaded_foreground_sample_ids_for_species: print(f'Downloaded foreground samples: {len(already_downloaded_foreground_sample_ids_for_species)}')
-        if already_downloaded_background_sample_ids_for_species: print(f'Downloaded background samples: {len(already_downloaded_background_sample_ids_for_species)}')
-        
         species_foreground_sample_ids_to_download = list(set(sample_dict["forefront_sample_ids"]).difference(already_downloaded_foreground_sample_ids_for_species))
         species_background_sample_ids_to_download = list(set(sample_dict["background_sample_ids"]).difference(already_downloaded_background_sample_ids_for_species))
         
-        if not species_foreground_sample_ids_to_download and not species_background_sample_ids_to_download:
-            print(f'No more samples to download for species with key "{species_key}"')
-        else:
-            print(f'Foreground samples to download: {len(species_foreground_sample_ids_to_download)}')
-            print(f'Background samples to download: {len(species_background_sample_ids_to_download)}')
+        foreground_samples_to_download_count = 0
+        background_samples_to_download_count = 0
+        
+        
+        if species_foreground_sample_ids_to_download or species_background_sample_ids_to_download:
             
-            species_samples_to_download = []
-            
+            species_samples_to_download = []    
             if sample_limit is not None:
                 if len(species_foreground_sample_ids_to_download) >= sample_limit: #if there are more forefront samples than the limit
                     species_samples_to_download = species_foreground_sample_ids_to_download[:sample_limit] #get number of forefront samples according to the limit
+                    foreground_samples_to_download_count = len(species_samples_to_download)
+                    
                 elif include_background_samples:    #if there are not enough forefront samples and include background samples is true 
-                    number_of_background_samples_to_download = sample_limit - len(species_foreground_sample_ids_to_download) #compute how many background samples are needed to meet limit
-                    species_samples_to_download = species_foreground_sample_ids_to_download + species_background_sample_ids_to_download[:number_of_background_samples_to_download] #get number of background samples according to the limit
+                    background_samples_to_download_count = sample_limit - len(species_foreground_sample_ids_to_download) #compute how many background samples are needed to meet limit
+                    species_samples_to_download = species_foreground_sample_ids_to_download + species_background_sample_ids_to_download[:background_samples_to_download_count] #get number of background samples according to the limit
+                    foreground_samples_to_download_count = len(species_samples_to_download)
+                    
                 else: #else include all available forefront samples
                     species_samples_to_download = species_foreground_sample_ids_to_download
+                    foreground_samples_to_download_count = len(species_foreground_sample_ids_to_download)
             elif include_background_samples:
                 species_samples_to_download = species_foreground_sample_ids_to_download + species_background_sample_ids_to_download
+                foreground_samples_to_download_count = len(species_foreground_sample_ids_to_download)
+                background_samples_to_download_count = len(species_background_sample_ids_to_download)
             else:
                 species_samples_to_download = species_foreground_sample_ids_to_download
-            
-            print(f'Total samples to download: {len(species_samples_to_download)}')
-            
+                foreground_samples_to_download_count = len(species_foreground_sample_ids_to_download)
+                        
             sample_ids_to_download += species_samples_to_download
-
+        
+        print(f'{f" Species key: {species_key} ":{"-"}^{51}}') #Species key: {species_key}
+        print(f"{'':<{padding_width}} {'Foreground':>{padding_width}} {'Background':>{padding_width}} {'Total':>{padding_width}}")
+        print(f"{'Samples':<{padding_width}} {foreground_sample_count:>{padding_width}} {background_sample_count:>{padding_width}} {foreground_sample_count + background_sample_count:>{padding_width}}")        
+        print(f"{'Downloaded':<{padding_width}} {len(already_downloaded_foreground_sample_ids_for_species):>{padding_width}} {len(already_downloaded_background_sample_ids_for_species):>{padding_width}} {len(already_downloaded_foreground_sample_ids_for_species) + len(already_downloaded_background_sample_ids_for_species):>{padding_width}}")
+        print(f"{'Downloadable':<{padding_width}} {len(species_foreground_sample_ids_to_download):>{padding_width}} {len(species_background_sample_ids_to_download):>{padding_width}} {len(species_foreground_sample_ids_to_download) + len(species_background_sample_ids_to_download):>{padding_width}}")
+        print(f"{'Downloading':<{padding_width}} {foreground_samples_to_download_count:>{padding_width}} {background_samples_to_download_count:>{padding_width}} {foreground_samples_to_download_count + background_samples_to_download_count:>{padding_width}}")
     #remove duplicates from list
     sample_ids_to_download = list(set(sample_ids_to_download))
     #remove samples that have already been dowloaded
