@@ -3,7 +3,7 @@ from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
 from songbird.nn.vae.loss import loss_function
 #from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
-from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+from songbird.nn.vae.models.res2d_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 
 import os
 import numpy as np
@@ -45,7 +45,7 @@ def show_x_vs_y_samples(x, y, sample_dim, tile=None, column_headers = [], row_he
                 textcoords='offset points')
 
         # plt.tight_layout(pad = 0.5)
-        fig.canvas.set_window_title(f"{tile} - real test data / reconstructions'")
+        fig.canvas.manager.set_window_title(f"{tile} - real test data / reconstructions'")
         plt.savefig(os.path.join(report_dir, f'{tile}_{fig_index}.png'))
         writer.add_figure(f"{tile} - real test data / reconstructions", fig, None)
 

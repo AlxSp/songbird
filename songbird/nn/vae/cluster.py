@@ -1,7 +1,7 @@
 #%%
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
 from songbird.dataset.dataset_info import DatasetInfo
-from songbird.nn.vae.models.conv_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+from songbird.nn.vae.models.conv2d_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 #%%
 import os
 import numpy as np
