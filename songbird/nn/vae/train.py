@@ -3,7 +3,11 @@ from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
 from songbird.nn.vae.loss import loss_function
 #from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
-from songbird.nn.vae.models.res2d_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+import songbird.nn.vae.models.res2d_vae as vae
+#import songbird.nn.vae.models.conv2d_vae as vae
+
+
+#from songbird.nn.vae.models.res2d_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 
 import os
 import numpy as np
@@ -61,7 +65,7 @@ def get_run_dir(model_runs_dir, prefix = 'run'):
     return run_dir
 #%%
 dataset_info = DatasetInfo()
-sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
+# sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
 
 project_dir = os.getcwd()
 
@@ -86,13 +90,15 @@ testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt
 
 
 #%%
-model_name = 'res_vae'
+model_name = os.path.basename(vae.__file__).split('.')[0]
 
 model_dir = os.path.join(project_dir, 'models', model_name)
 if not os.path.exists(model_dir):
     os.mkdir(model_dir)
 
-report_dir = os.path.join(project_dir, "reports", "vae", "songbird_model")
+report_dir = os.path.join(project_dir, "reports", "vae", model_name)
+if not os.path.exists(report_dir):
+    os.mkdir(report_dir)
 
 model_runs_dir = os.path.join(project_dir, 'runs', model_name)
 run_dir = get_run_dir(model_runs_dir)
@@ -104,7 +110,7 @@ print(f"Saving run data to dir: {run_dir}")
 save_epoch_interval = 20
 
 learning_rate = 1e-4
-epochs = 400
+epochs = 15
 batch_size = 256
 
 val_percentage = 0.05
@@ -161,9 +167,9 @@ test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_work
 print(f"Train length: {len(train_set)} Test length: {len(test_set)}")
 print(f"Train batch num: {len(train_loader)} Test batch num: {len(test_loader)}")
 # %%
-encoder = VariationalEncoder()
-decoder = VariationalDecoder()
-model = VariationalAutoEncoder(encoder, decoder)
+encoder = vae.VariationalEncoder()
+decoder = vae.VariationalDecoder()
+model = vae.VariationalAutoEncoder(encoder, decoder)
 
 writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
 

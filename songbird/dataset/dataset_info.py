@@ -50,7 +50,7 @@ class DatasetInfo:
         
         downloaded_sample_id_arr = [file_id.split('.')[0] for file_id in os.listdir(raw_samples_dir)]
         
-        print(f"Found {len(downloaded_sample_id_arr)} downloaded samples.")
+        # print(f"Found {len(downloaded_sample_id_arr)} downloaded samples.")
             
         for sample_id in downloaded_sample_id_arr:
             foreground_species_key = samples_metadata_dict[sample_id]['forefront_bird_key']
