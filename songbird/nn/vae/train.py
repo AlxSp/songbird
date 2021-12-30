@@ -1,15 +1,18 @@
 #%%
 from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
 from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
-from songbird.nn.vae.loss import loss_function
+from songbird.nn.vae.loss import mse_loss_function as loss_function #loss_function, 
 #from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
-import songbird.nn.vae.models.res2d_vae as vae
+import songbird.nn.vae.models.reg2d_vae as vae
 #import songbird.nn.vae.models.conv2d_vae as vae
 
 
 #from songbird.nn.vae.models.res2d_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 
 import os
+import time
+import datetime
+import random
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -69,24 +72,23 @@ dataset_info = DatasetInfo()
 
 project_dir = os.getcwd()
 
-sample_rate  = 44100
-stft_window_size = 2048
-stft_step_size = 512
-max_frequency = 10000
-min_frequency = 2500
+#TODO: parameters should be read from a config file
+# sample_rate  = 44100
+# stft_window_size = 2048
+# stft_step_size = 512
+# max_frequency = 10000
+# min_frequency = 2500
 
-img_dim = (512, 32) # (freq, time)  # (time, freq)
-img_step_size = 1  # (time)
-event_padding_size = 4
+# img_dim = (512, 32) # (freq, time)  # (time, freq)
+# img_step_size = 1  # (time)
+# event_padding_size = 4
+####
 
-num_workers = 12
-
-continue_training = False
-
+dataset_name = f'test_pt_samples_0d{512}_1d{32}_iss{1}'
 # dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}')
 
-trainset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}', 'train')
-testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}', 'test')
+trainset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_name, 'train')
+testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_name, 'test')
 
 
 #%%
@@ -114,34 +116,21 @@ epochs = 15
 batch_size = 256
 
 val_percentage = 0.05
-random_seed = 42
 
-writer.add_hparams(
-    {   "learning_rate": learning_rate,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "val_percentage": val_percentage,
-        "random_seed": random_seed,
-        "Optimizer": "AdamW",
-    },
-    dict({
-        "data_processing/sample_rate" : sample_rate,
-        "data_processing/stft_window_size" : stft_window_size,
-        "data_processing/stft_step_size" : stft_step_size,
-        "data_processing/max_frequency" : max_frequency,
-        "data_processing/min_frequency" : min_frequency,
 
-        "data_processing/img_step_size" : img_step_size,  # (time)
-        "data_processing/event_padding_size" : event_padding_size
-    }, **{f'data_processing/img_dim_{i}': v for i, v in enumerate(img_dim)})
+random_seed = 43
 
-)
+use_amp = True
 
-plot_params = {
-    "report_dir" : report_dir,
-    "plot_num" : 4,
-    "sample_rate": sample_rate
-}
+num_workers = 12
+
+continue_training = False
+
+# set random seeds
+torch.manual_seed(random_seed)
+np.random.seed(random_seed)
+random.seed(random_seed)
+
 
 # %%
 if not os.path.exists(trainset_path):
@@ -154,28 +143,53 @@ train_set = SpectrogramFileDataset(trainset_path, transform=ToTensor())
 test_set = SpectrogramFileDataset(testset_path, transform=ToTensor())
 print(f"{'#'*3} {'Dataset info' + ' ':{'#'}<{24}}")
 print(f"Total dataset length: {len(train_set) + len(test_set)}")
-
-#%%
-# train_size = int(len(spectrogram_dataset) * (1 - val_percentage))
-# test_size = len(spectrogram_dataset) - train_size #int(len(spectrogram_dataset) * val_percentage)
-# train_set, val_set = torch.utils.data.random_split(spectrogram_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(random_seed))
-
 # %%
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=12)
 test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=12)
 #%%
 print(f"Train length: {len(train_set)} Test length: {len(test_set)}")
 print(f"Train batch num: {len(train_loader)} Test batch num: {len(test_loader)}")
+
+img_dim = train_set.sample_dim # (freq, time)  # (time, freq)
 # %%
+writer.add_hparams(
+    {   "learning_rate": learning_rate,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "val_percentage": val_percentage,
+        "random_seed": random_seed,
+        "Optimizer": "AdamW",
+        "use_amp": use_amp,
+    },
+    dict({
+        "data_processing/sample_rate" : train_set.dataset_attributes["parameters"]['sample_rate'],
+        "data_processing/stft_window_size" : train_set.dataset_attributes["parameters"]['stft_window_size'],
+        "data_processing/stft_step_size" : train_set.dataset_attributes["parameters"]['stft_step_size'],
+        "data_processing/frequency_range_size" : train_set.dataset_attributes['parameters']['frequency_range_size'],
+        "data_processing/lower_frequency_margin" : train_set.dataset_attributes['parameters']['lower_frequency_margin'],
+
+        "data_processing/img_step_size" : train_set.dataset_attributes['sampling_step_size'],  # (time)
+        "data_processing/event_padding_size" : train_set.dataset_attributes['sampling_padding_size'],  # (time)
+    }, **{f'data_processing/img_dim_{i}': v for i, v in enumerate(img_dim)})
+
+)
+
+plot_params = {
+    "report_dir" : report_dir,
+    "plot_num" : 4,
+    "sample_rate": train_set.dataset_attributes["parameters"]['sample_rate']
+}
+
 encoder = vae.VariationalEncoder()
 decoder = vae.VariationalDecoder()
 model = vae.VariationalAutoEncoder(encoder, decoder)
 
+
 writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
 
-#codes = dict(mu = list(), variance = list(), y=list())
 #%%
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
 start_epoch = 0
 
@@ -202,21 +216,29 @@ for epoch in range(start_epoch, epochs):
 
     train_samples_count = 0
     if epoch > 0:
+        epoch_start_time = time.time()
         model.train()
+        
         for batch, _, _ in train_loader:
+            with torch.cuda.amp.autocast(enabled=use_amp):
+                batch = batch.to(device)
+                x_hat, mu, logvar = model(batch)
 
-            batch = batch.to(device)
-            x_hat, mu, logvar = model(batch)
-
-            loss = loss_function(x_hat, batch, mu, logvar)
+                loss = loss_function(x_hat, batch, mu, logvar)
+            
+            
             train_loss += loss.item()
+            
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            # loss.backward()
+            # optimizer.step()
 
             train_samples_count += len(batch)
-            print(f"epoch: {epoch:5} | train loss: {train_loss / train_samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
-
+            print(f"epoch: {epoch:5} | train loss: {train_loss / train_samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f} | epoch train time: {str(datetime.timedelta(seconds = time.time() - epoch_start_time))[:-3]}", end = "\r")
+        
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
 
     # print(f"tain set length: {len(train_loader.dataset)} train_samples_count: {train_samples_count}")
@@ -231,11 +253,12 @@ for epoch in range(start_epoch, epochs):
     with torch.no_grad():
         model.eval()
         for batch, file_paths, sample_indices in test_loader:
-            batch = batch.to(device)
+            with torch.cuda.amp.autocast(enabled=use_amp):
+                batch = batch.to(device)
 
-            x_hat, mu, logvar = model(batch)
+                x_hat, mu, logvar = model(batch)
 
-            test_loss += loss_function(x_hat, batch, mu, logvar).item()
+                test_loss += loss_function(x_hat, batch, mu, logvar).item()
 
             means.append(mu.detach())
             variance.append(logvar.detach())
@@ -249,8 +272,8 @@ for epoch in range(start_epoch, epochs):
         writer.add_scalar("Loss/test", test_loss / len(test_loader.dataset), epoch)
 
         show_x_vs_y_samples(
-            val_x,
-            val_x_hat,
+            val_x.float(),
+            val_x_hat.float(),
             sample_dim = img_dim,
             tile = f'Epoch_{epoch}',
             column_headers = [f"file: {os.path.splitext(os.path.basename(file_path))[0]}\nsample: {sample_index}" for file_path, sample_index in zip(file_paths, sample_indices)],

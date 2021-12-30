@@ -475,6 +475,9 @@ def pytorch_create_and_save_dateset(
                 "time_taken_sec" : (end_time - start_time).total_seconds(),
                 "samples_count" : samples_count,
                 "sample_dim" : list(sample_dim),
+                "sampling_step_size" : sampling_step_size,
+                "sampling_padding_size" : sampling_padding_size,
+                "validation_split" : validation_split,
                 "max_value" : float(max_value),
                 "min_value" : float(min_value),
                 "parameters" : {
@@ -494,6 +497,9 @@ def pytorch_create_and_save_dateset(
                 "time_taken_sec" : (end_time - start_time).total_seconds(),
                 "samples_count" : samples_count,
                 "sample_dim" : list(sample_dim),
+                "sampling_step_size" : sampling_step_size,
+                "sampling_padding_size" : sampling_padding_size,
+                "validation_split" : validation_split,
                 "max_value" : float(max_value),
                 "min_value" : float(min_value),
                 "parameters" : {
@@ -522,6 +528,9 @@ def pytorch_create_and_save_dateset(
                 "time_taken_sec" : (end_time - start_time).total_seconds(),
                 "samples_count" : samples_count,
                 "sample_dim" : list(sample_dim),
+                "sampling_step_size" : sampling_step_size,
+                "sampling_padding_size" : sampling_padding_size,
+                "validation_split" : validation_split,
                 "max_value" : float(max_value),
                 "min_value" : float(min_value),
                 "parameters" : {
