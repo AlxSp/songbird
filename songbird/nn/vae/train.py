@@ -66,23 +66,18 @@ def get_run_dir(model_runs_dir, prefix = 'run'):
 
 
     return run_dir
+
+def set_random_seed(random_seed):
+    # set random seeds
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    random.seed(random_seed)
+    
 #%%
 dataset_info = DatasetInfo()
 # sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
 
 project_dir = os.getcwd()
-
-#TODO: parameters should be read from a config file
-# sample_rate  = 44100
-# stft_window_size = 2048
-# stft_step_size = 512
-# max_frequency = 10000
-# min_frequency = 2500
-
-# img_dim = (512, 32) # (freq, time)  # (time, freq)
-# img_step_size = 1  # (time)
-# event_padding_size = 4
-####
 
 dataset_name = f'test_pt_samples_0d{512}_1d{32}_iss{1}'
 # dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'pt_samples_0d{img_dim[0]}_1d{img_dim[1]}_iss{img_step_size}')
@@ -115,10 +110,10 @@ learning_rate = 1e-4
 epochs = 15
 batch_size = 256
 
-val_percentage = 0.05
+# val_percentage = 0.05
 
 
-random_seed = 43
+random_seed = 44
 
 use_amp = True
 
@@ -126,11 +121,8 @@ num_workers = 12
 
 continue_training = False
 
-# set random seeds
-torch.manual_seed(random_seed)
-np.random.seed(random_seed)
-random.seed(random_seed)
 
+set_random_seed(random_seed) # for reproducibility set random seed before loading data
 
 # %%
 if not os.path.exists(trainset_path):
@@ -156,7 +148,7 @@ writer.add_hparams(
     {   "learning_rate": learning_rate,
         "epochs": epochs,
         "batch_size": batch_size,
-        "val_percentage": val_percentage,
+        # "val_percentage": val_percentage,
         "random_seed": random_seed,
         "Optimizer": "AdamW",
         "use_amp": use_amp,
@@ -184,6 +176,7 @@ encoder = vae.VariationalEncoder()
 decoder = vae.VariationalDecoder()
 model = vae.VariationalAutoEncoder(encoder, decoder)
 
+set_random_seed(random_seed) # for reproducibility set random seed after the model is initialized
 
 writer.add_graph(model, next(iter(train_loader))[0]) # add model to tensorboard and
 
@@ -208,6 +201,9 @@ print(f"{'#'*3} {'Training info' + ' ':{'#'}<{24}}")
 print(f"Using {device} device for training")
 model.to(device)
 model.train()
+
+set_random_seed(random_seed) # for reproducibility set random seed after the optimizer is initialized (may be not needed)
+
 #%%
 print(f"{'#'*3} {'Training' + ' ':{'#'}<{24}}")
 for epoch in range(start_epoch, epochs):

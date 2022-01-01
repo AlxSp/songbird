@@ -9,6 +9,7 @@ import os, sys
 import shutil
 import pydub
 import time
+import random
 from time import process_time
 from datetime import datetime
 import numpy as np
@@ -50,6 +51,12 @@ class TimeSeriesEvent:
     min_frequency_hz: float
     max_frequency_hz: float
 
+def set_random_seed(random_seed):
+    # set random seeds
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    random.seed(random_seed)
+
 def crop_frequency_range(
         spectrogram, 
         frequency_bins,
@@ -57,8 +64,6 @@ def crop_frequency_range(
         min_frequency_index: int 
         ):
     return spectrogram[:, min_frequency_index:max_frequency_index], frequency_bins[min_frequency_index:max_frequency_index]
-
-
 
 def trim_to_frequency_range(spectrogram, frequency_bins, frequency_range = 0, min_frequency_margin = 0):
     #get closest frequency in bin
@@ -145,12 +150,14 @@ def torch_create_spectrogram_samples(
     #print(f'Device: {device}')
     #start_time = process_time()
     sample, _ = ap.load_audio_sample(sample_id, sample_rate)
+    
+    normalized_sample = (sample - np.mean(sample)) / np.std(sample)#min_max_normalize(sample)
     #print(f"Task: {'Load sample':<28} | Time taken: {process_time() - start_time:>9.3f} sec | Sample length: {len(sample) / sample_rate:.3f} sec")
     # create high pass filter
     #start_time = process_time()
     sos = signal.butter(10, 3500, 'hp', fs=sample_rate, output='sos')
     # apply high pass filter
-    sample = signal.sosfilt(sos, sample)
+    filtered_sample = signal.sosfilt(sos, sample)
     # print(f"Task: {'Apply High Pass Filter':<28} | Time taken: {process_time() - start_time:>9.3f} sec |")
     # create spectrogram from audio sample
     # start_time = process_time()
@@ -162,7 +169,7 @@ def torch_create_spectrogram_samples(
       pad_mode = "reflect",
       power = 2.0,
     ).to(device)
-    spectrogram = spectrogram_transform(torch.from_numpy(sample).to(device))
+    spectrogram = spectrogram_transform(torch.from_numpy(filtered_sample).to(device))
     spectrogram =  torchaudio.transforms.AmplitudeToDB('power', top_db=80)(spectrogram)
     frequency_bins = torch.fft.rfftfreq(stft_window_size, d = 1.0/sample_rate).numpy()
     spectrogram = spectrogram.to("cpu").numpy()
@@ -303,8 +310,11 @@ def pytorch_create_samples_from_audio(
         sampling_step_size, 
         sampling_padding_size,
         validation_split = 0.0,
+        random_seed = 0
         device = "cpu",
     ):
+    
+    set_random_seed(random_seed)
     
     spectrogram_sample_arr, sample_slice_indices_arr, audio_events_found = torch_create_spectrogram_samples(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, device)
     
@@ -394,6 +404,7 @@ def pytorch_create_and_save_dateset(
         sampling_step_size, 
         sampling_padding_size, 
         validation_split = 0.0,
+        random_seed = 0,
         num_workers = 1,
         device = 'cpu'
     ):
@@ -438,12 +449,12 @@ def pytorch_create_and_save_dateset(
     
     if num_workers > 1: # if the workers are more than 1, create a processing pool
         with Pool(processes=num_workers) as pool:
-            worker_inputs = [(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, device) for sample_id in sample_ids]
+            worker_inputs = [(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, random_seed, device) for sample_id in sample_ids]
             pool.starmap(pytorch_create_samples_from_audio, worker_inputs, chunksize=1) #setting chunksize to 1 to due to imbalanced sample processing time 
         
     else: # if only one worker is used, create the dataset sequentially on the main thread
         for sample_id in tqdm.tqdm(sample_ids):
-            pytorch_create_samples_from_audio(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, device)
+            pytorch_create_samples_from_audio(dataset_path, sample_id, sample_rate, stft_window_size, stft_step_size,  frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, random_seed, device)
 
 
     max_value = 0.0
@@ -575,6 +586,8 @@ if __name__ == "__main__":
     lower_frequency_margin = 100
 
     validation_split = 0.1
+    
+    random_seed = 42
 
     num_workers = 12
 
@@ -584,7 +597,7 @@ if __name__ == "__main__":
     print(f"Dataset set will be stored at: {dataset_path}")
     print("Building dataset")
         #create_and_return_dataset(sample_ids[:12], sample_rate, stft_window_size, stft_step_size, max_frequency, min_frequency, sample_dim, sampling_step_size, sampling_padding_size)
-    pytorch_create_and_save_dateset(dataset_path, sample_ids, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, num_workers=num_workers, device = device)
+    pytorch_create_and_save_dateset(dataset_path, sample_ids, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, validation_split, random_seed, num_workers=num_workers, device = device)
     print("Dataset built")
     print(f"Stored in location: {dataset_path}")
 
