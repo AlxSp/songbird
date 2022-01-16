@@ -1,6 +1,7 @@
 
 from typing import List, Dict
 from enum import Enum
+import argparse
 import os
 import json
 
@@ -75,14 +76,13 @@ class DatasetInfo:
                     
         return downloaded_species_samples_dict
      
-    def describe_downloaded_samples(self) -> None:
+    def describe_downloaded_samples(self, show_top_n = 10) -> None:
         """
         Prints a description of the downloaded samples.
         :return: None
         """
         species_with_foreground_samples = []
         species_with_background_samples = []
-        show_top_n = 10
         
         for species_key in self.downloaded_species_samples_dict:
             number_of_foreground_samples = len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Foreground.value])
@@ -131,3 +131,13 @@ class DatasetInfo:
 if __name__ == "__main__":
     dataset_info = DatasetInfo()
     #print(dataset_info.get_downloaded_species_sample_ids(1))
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-dbs','--describe_downloaded_samples', type = int, const = 10, nargs = '?', default = 0, help = 'Return list of downloaded samples')
+    args = parser.parse_args()
+    
+    if args.describe_downloaded_samples:
+        dataset_info.describe_downloaded_samples(args.describe_downloaded_samples)
+    
+    
+    

@@ -108,7 +108,7 @@ save_epoch_interval = 20
 
 learning_rate = 1e-4
 epochs = 15
-batch_size = 256
+batch_size = 512
 
 # val_percentage = 0.05
 
@@ -199,6 +199,11 @@ if continue_training:
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"{'#'*3} {'Training info' + ' ':{'#'}<{24}}")
 print(f"Using {device} device for training")
+print(f"Using mixed precision: {use_amp}")
+print(f"Epochs: {epochs}")
+print(f"Batch size: {batch_size}")
+
+
 model.to(device)
 model.train()
 

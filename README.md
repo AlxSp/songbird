@@ -32,15 +32,15 @@
 
 ## Scripts in `songbird/`
 
-### data/
+### dataset/
 
 * ### create_data_dictionary.py
-    Processes files and information in the **xeno_canto_bsfatw/** directory (Setup steps 1 & 2) and creates a data dictionary in the **dataset/** directory. The created files are; 
-    species_info.csv, species_sample_info.json and samples_metadata.json and are located in the **dataset/data_dictionary** directory. These files are utilized by the `download_data.py` script.
+    Processes files and information in the **xeno_canto_bsfatw/** directory (Setup steps 1 & 2) and creates a data dictionary in the **data/** directory. The created files are; 
+    species_info.csv, species_sample_info.json and samples_metadata.json and are located in the **data/data_dictionary** directory. These files are utilized by the `download_data.py` script.
 
 * ### download_data.py
 
-    Reads the data dictionary (**dataset/data_dictionary/**) and downloads files in the mp3 format to the **dataset/raw/** directory. It will not download a sample if it is already present in the **dataset/raw/** directory. Creates a download_species_sample_info.json file in the **dataset/data_dictionary/** directory which stores information on downloaded samples and their relation to the species
+    Reads the data dictionary (**data/data_dictionary/**) and downloads files in the mp3 format to the **data/raw/** directory. It will not download a sample if it is already present in the **data/raw/** directory. Creates a download_species_sample_info.json file in the **data/data_dictionary/** directory which stores information on downloaded samples and their relation to the species
 
     **CLI Arguments:**
     
@@ -83,11 +83,25 @@
 
     * **reset_download_dir**
 
-        If this argument is given, the **dataset/raw/** directory will be completely emptied before samples are downloaded
+        If this argument is given, the **data/raw/** directory will be completely emptied before samples are downloaded
 
     * **download_delay <float_value>**
 
         Include this argument with a float representing the seconds of delay between each download
+
+* ### dataset_info.py
+
+    Reads the data dictionary (**data/data_dictionary/**) and prints information about the dataset. //TODO: add more info
+
+    **CLI Arguments:**
+    
+    * **all**
+
+        set if all available samples should be downloaded 
+
+    * **exclude_unknown_species**
+
+        If this argument is set, unknown species, with species key 0, will be excluded from the download. This argument is only valid when the --all argument is given
 ----
 
 ### audio/

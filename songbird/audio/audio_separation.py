@@ -310,7 +310,7 @@ def pytorch_create_samples_from_audio(
         sampling_step_size, 
         sampling_padding_size,
         validation_split = 0.0,
-        random_seed = 0
+        random_seed = 0,
         device = "cpu",
     ):
     
@@ -564,7 +564,9 @@ if __name__ == "__main__":
     
     sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
     sample_ids += dataset_info.get_downloaded_species_sample_ids(9475738, SampleRecordingType.Foreground)
+    sample_ids += dataset_info.get_downloaded_species_sample_ids(2490719, SampleRecordingType.Foreground)
     sample_ids += dataset_info.get_downloaded_species_sample_ids(2482593, SampleRecordingType.Foreground)
+    sample_ids += dataset_info.get_downloaded_species_sample_ids(2494422, SampleRecordingType.Foreground)
 
     sample_ids = list(set(sample_ids)) # ensure that the sample ids are unique (no duplicates)
 
