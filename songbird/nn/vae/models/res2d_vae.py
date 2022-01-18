@@ -2,42 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from nn.blocks.Conv2d import ResizeResidualBlockConv2d, ResidualBlockConv2d
 
-
-class ResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
-        super(ResidualBlockConv2d, self).__init__()
-        # bias is set to False because we are using batch normalization
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False) 
-        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-
-        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
-        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
-
-        #if the stride is not 1 or the input and output channels are not the same, transform residual value into the right shape
-        if stride != 1 or in_channels != out_channels:
-            self.residual = nn.Sequential(
-                nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(num_features=out_channels)
-            )
-        else:
-            self.residual = nn.Identity()
-        
-
-    def forward(self, x):
-        residual = self.residual(x)
-        x = self.conv1(x)
-        # print(f"Conv 1 output shape: {x.shape}")
-        x = self.batch_norm1(x)
-        x = F.relu(x)
-        
-        x = self.conv2(x)
-        # print(f"Conv 2 output shape: {x.shape}")
-        x = self.batch_norm2(x)
-        x = x + residual
-        x = F.relu(x)
-
-        return x
 #%%
 class VariationalEncoder(nn.Module):
     def __init__(self):
@@ -90,71 +56,6 @@ class VariationalEncoder(nn.Module):
         
         return  x_mean, x_variance
 
-class ResizeResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, scale_factor=2):
-        super(ResizeResidualBlockConv2d, self).__init__()
-        
-        self.upsample = nn.Upsample(scale_factor=scale_factor, mode='nearest')
-        
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False) 
-        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-
-        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
-        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
-
-        #if the stride is not 1 or the input and output channels are not the same, transform residual value into the right shape
-        if stride != 1 or in_channels != out_channels:
-            self.residual = nn.Sequential(
-                nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(num_features=out_channels)
-            )
-        else:
-            self.residual = nn.Identity()
-            
-    def forward(self, x):
-        x = self.upsample(x)
-        residual = self.residual(x)
-        
-        x = self.conv1(x)
-        x = self.batch_norm1(x)
-        x = F.relu(x)
-        
-        x = self.conv2(x)
-        x = self.batch_norm2(x)
-        x = x + residual
-        x = F.relu(x)
-        
-        return x
-
-class TransposeResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1,):
-        super(TransposeResidualBlockConv2d, self).__init__()
-        self.tconv1 = nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.tconv2 = nn.ConvTranspose2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-
-        self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
-        self.batch_norm2 = nn.BatchNorm2d(num_features=out_channels)
-
-        if stride != 1 or in_channels != out_channels:
-            self.residual = nn.Sequential(
-                nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(num_features=out_channels)
-            )
-        else:
-            self.residual = nn.Identity()
-
-
-    def forward(self, x):
-        residual =  x
-        x = self.tconv1(x)
-        x = self.batch_norm1(x)
-        x = F.relu(x)
-        x = self.tconv2(x)
-        x = self.batch_norm2(x)
-        x = x + residual
-        x = F.relu(x)
-
-        return x
 #%%
 class VariationalDecoder(nn.Module):
     def __init__(self):
@@ -199,23 +100,7 @@ class VariationalDecoder(nn.Module):
         x = self.head(x)
         
         x = torch.sigmoid(x)
-        # print(f"Input shape: {x.shape}")
-        # x =  F.relu(self.dense1(x))
-        # # print(f"Dense output shape: {x.shape}")
-        # x = x.view(-1, 128, 32, 2)
-        # # print(f"Reshape shape: {x.shape}")
-        # x = F.relu(self.conv1(x))
-        # # print(f"Conv 1 output shape: {x.shape}")
-        # x = F.relu(self.conv2(x))
-        # # print(f"Conv 2 output shape: {x.shape}")
-        # x = F.relu(self.conv3(x))
-        # # print(f"Conv 4 output shape: {x.shape}")
-        # x = F.relu(self.conv4(x))
-        # # print(f"Conv 4 output shape: {x.shape}")
-        # x =  torch.sigmoid(self.conv5(x))
-        # print(f"Conv 5 output shape: {x.shape}")
-        #x = x.view(-1, 64, 1, 1)
-        #x =  F.relu(self.dense2(x))
+
         return x  
 #%%
 class VariationalAutoEncoder(nn.Module):  

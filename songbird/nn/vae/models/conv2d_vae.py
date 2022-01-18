@@ -48,12 +48,7 @@ class VariationalEncoder(nn.Module):
         
         x = F.relu(self.conv8(x))
         
-        # x = F.relu(self.conv9(x))
-        
-        # x = F.relu(self.conv10(x))
-        
-        # x = F.relu(self.conv11(x))
-        # print(f"Conv 5 output shape: {x.shape}")
+
 
         # x = self.pool(x)
         # print(f"Pool output shape: {x.shape}")

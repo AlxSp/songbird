@@ -2,6 +2,7 @@
 from typing import List, Dict
 from enum import Enum
 import argparse
+import datetime
 import os
 import json
 
@@ -76,6 +77,8 @@ class DatasetInfo:
                     
         return downloaded_species_samples_dict
      
+    
+     
     def describe_downloaded_samples(self, show_top_n = 10) -> None:
         """
         Prints a description of the downloaded samples.
@@ -85,19 +88,28 @@ class DatasetInfo:
         species_with_background_samples = []
         
         for species_key in self.downloaded_species_samples_dict:
-            number_of_foreground_samples = len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Foreground.value])
-            number_of_background_samples = len(self.downloaded_species_samples_dict[species_key][SampleRecordingType.Background.value])
+            foreground_samples = self.downloaded_species_samples_dict[species_key][SampleRecordingType.Foreground.value]
+            background_samples = self.downloaded_species_samples_dict[species_key][SampleRecordingType.Background.value]
+            
+            number_of_foreground_samples = len(foreground_samples)
+            number_of_background_samples = len(background_samples)
+            
             if number_of_foreground_samples > 0:
-                species_with_foreground_samples.append((species_key, number_of_foreground_samples))
+                for sample_id in foreground_samples:
+                    print(self.samples_metadata[sample_id].get('recording_time_sec', 0))
+                sample_length_sec = sum([self.samples_metadata[sample_id].get('recording_time_sec', 0) if not None else 0 for sample_id in foreground_samples])
+                species_with_foreground_samples.append((species_key, number_of_foreground_samples, sample_length_sec))
+            
             if number_of_background_samples > 0:
-                species_with_background_samples.append((species_key, number_of_background_samples))
+                #sample_length_sec = sum([self.samples_metadata[sample_id].get('recording_time_sec', 0) for sample_id in background_samples])
+                species_with_background_samples.append((species_key, number_of_background_samples, 0))
             
         species_with_foreground_samples.sort(key=lambda x: x[1], reverse=True)
         
         print(f"Samples for {len(species_with_foreground_samples)} species with foreground recordings")
         print(f"The top {show_top_n} species with foreground recordings:")
         for i in range(show_top_n):
-            print(f"Species key: {species_with_foreground_samples[i][0]} Number of samples: {species_with_foreground_samples[i][1]}")
+            print(f"Species key: {species_with_foreground_samples[i][0]} Number of samples: {species_with_foreground_samples[i][1]} Total length: {str(datetime.timedelta(species_with_foreground_samples[1][2]))}")
             
     def get_downloaded_species_sample_ids(self, species_key: int, sample_recording_type: SampleRecordingType = None) -> list:
         """
