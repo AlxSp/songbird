@@ -45,19 +45,6 @@ class VariationalEncoder(nn.Module):
         x = self.stage_3(x)
         
         x = self.stage_4(x)
-        # print(f"Input shape: {x.shape}")
-        # x = self.res_block1(x)#F.relu(self.conv1(x))
-        # x = self.res_block2(x)#F.relu(self.conv2(x))
-        
-        # x = self.res_block3(x)#F.relu(self.conv3(x))
-        # x = self.res_block4(x)#F.relu(self.conv3(x))
-        # # print(f"Res 3 output shape: {x.shape}")
-        # # x = self.max_pool3(x)
-        # x = self.res_block5(x)#F.relu(self.conv3(x))
-        # x = self.res_block6(x)#F.relu(self.conv3(x))
-        
-        # x = self.res_block7(x)
-        # x = self.res_block8(x)
 
         batch_size = x.shape[0]
         # print(f"x shape: {x.shape}")
@@ -77,23 +64,23 @@ class VariationalDecoder(nn.Module):
         
         # self.stem = nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2)
         self.stage_1 = nn.Sequential(
-            ResizeResidualBlockConv2d(in_channels=256, out_channels=256, scale_factor=2),
-            ResidualBlockConv2d(in_channels=256, out_channels=128)
+            ResidualBlockConv2d(in_channels=256, out_channels=256),
+            ResizeResidualBlockConv2d(in_channels=256, out_channels=128, scale_factor=2),
         )
         
         self.stage_2 = nn.Sequential(
-            ResizeResidualBlockConv2d(in_channels=128, out_channels=128, scale_factor=2),
-            ResidualBlockConv2d(in_channels=128, out_channels=64)
+            ResidualBlockConv2d(in_channels=128, out_channels=128),
+            ResizeResidualBlockConv2d(in_channels=128, out_channels=64, scale_factor=2),
         )
         
         self.stage_3 = nn.Sequential(
-            ResizeResidualBlockConv2d(in_channels=64, out_channels=64, scale_factor=2),
-            ResidualBlockConv2d(in_channels=64, out_channels=32)
+            ResidualBlockConv2d(in_channels=64, out_channels=64),
+            ResizeResidualBlockConv2d(in_channels=64, out_channels=32, scale_factor=2),
         )
         
         self.stage_4 = nn.Sequential(
+            ResizeResidualBlockConv2d(in_channels=32, out_channels=32),
             ResizeResidualBlockConv2d(in_channels=32, out_channels=32, scale_factor=2),
-            ResizeResidualBlockConv2d(in_channels=32, out_channels=32)
         )
         
         self.head = nn.Conv2d(32, 1, kernel_size=3, stride=1, padding=1)
@@ -110,18 +97,6 @@ class VariationalDecoder(nn.Module):
         x = self.stage_3(x)
         
         x = self.stage_4(x)
-        
-        # x = self.res_block1(x)
-        # x = self.res_block2(x)
-        
-        # x = self.res_block3(x)
-        # x = self.res_block4(x)
-        
-        # x = self.res_block5(x)
-        # x = self.res_block6(x)
-        
-        # x = self.res_block7(x)
-        # x = self.res_block8(x)
         
         x = self.head(x)
         

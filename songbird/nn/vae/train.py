@@ -220,6 +220,7 @@ for epoch in range(start_epoch, epochs):
         epoch_start_time = time.time()
         model.train()
         
+        batch_count = 0
         for batch, _, _ in train_loader:
             with torch.cuda.amp.autocast(enabled=use_amp):
                 batch = batch.to(device)
@@ -236,9 +237,11 @@ for epoch in range(start_epoch, epochs):
             scaler.update()
             # loss.backward()
             # optimizer.step()
+            
 
             train_samples_count += len(batch)
-            print(f"epoch: {epoch:5} | train loss: {train_loss / train_samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f} | epoch train time: {str(datetime.timedelta(seconds = time.time() - epoch_start_time))[:-3]}", end = "\r")
+            batch_count += 1
+            print(f"epoch: {epoch:5} | batch: {int(batch_count/len(train_loader) * 100):3}% | train loss: {train_loss / train_samples_count:16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f} | epoch train time: {str(datetime.timedelta(seconds = time.time() - epoch_start_time))[:-3]}", end = "\r")
         
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
 
@@ -253,6 +256,7 @@ for epoch in range(start_epoch, epochs):
 
     with torch.no_grad():
         model.eval()
+        
         for batch, file_paths, sample_indices in test_loader:
             with torch.cuda.amp.autocast(enabled=use_amp):
                 batch = batch.to(device)
@@ -268,7 +272,7 @@ for epoch in range(start_epoch, epochs):
             val_x = batch
             val_x_hat = x_hat
 
-        print(f"epoch: {epoch:5} | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
+        print(f"epoch: {epoch:5} | batch: {100:3}% | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 
         writer.add_scalar("Loss/test", test_loss / len(test_loader.dataset), epoch)
 

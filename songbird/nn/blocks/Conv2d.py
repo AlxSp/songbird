@@ -3,11 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ResidualBottleneckBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
+    def __init__(self, in_channels, out_channels, stride=1, groups=1):
         super(ResidualBottleneckBlockConv2d, self).__init__()
         # bias is set to False because we are using batch normalization
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=1, bias=False) 
-        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups, bias=False)
         self.conv3 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=1, bias=False)
 
         self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
@@ -41,11 +41,11 @@ class ResidualBottleneckBlockConv2d(nn.Module):
         return x
     
 class DResidualBottleneckBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
+    def __init__(self, in_channels, out_channels, stride=1, groups=1):
         super(ResidualBottleneckBlockConv2d, self).__init__()
         # bias is set to False because we are using batch normalization
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=1, bias=False) 
-        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups, bias=False)
         self.conv3 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=1, bias=False)
 
         self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
@@ -81,10 +81,10 @@ class DResidualBottleneckBlockConv2d(nn.Module):
 
 
 class ResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
+    def __init__(self, in_channels, out_channels, stride=1, groups=1):
         super(ResidualBlockConv2d, self).__init__()
         # bias is set to False because we are using batch normalization
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False) 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups, bias=False) 
         self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
 
         self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
@@ -116,10 +116,10 @@ class ResidualBlockConv2d(nn.Module):
         return x
     
 class DResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
+    def __init__(self, in_channels, out_channels, stride=1, groups=1):
         super(DResidualBlockConv2d, self).__init__()
         # bias is set to False because we are using batch normalization
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False) 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups, bias=False) 
         self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
 
         self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
@@ -152,12 +152,12 @@ class DResidualBlockConv2d(nn.Module):
         return x
     
 class ResizeResidualBlockConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, scale_factor=2):
+    def __init__(self, in_channels, out_channels, stride=1, groups=1, scale_factor=2):
         super(ResizeResidualBlockConv2d, self).__init__()
         
         self.upsample = nn.Upsample(scale_factor=scale_factor, mode='nearest')
         
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False) 
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups, bias=False) 
         self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
 
         self.batch_norm1 = nn.BatchNorm2d(num_features=out_channels)
