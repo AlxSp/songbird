@@ -95,10 +95,13 @@ class DatasetInfo:
             number_of_background_samples = len(background_samples)
             
             if number_of_foreground_samples > 0:
+                samples_length_sec = []
                 for sample_id in foreground_samples:
-                    print(self.samples_metadata[sample_id].get('recording_time_sec', 0))
-                sample_length_sec = sum([self.samples_metadata[sample_id].get('recording_time_sec', 0) if not None else 0 for sample_id in foreground_samples])
-                species_with_foreground_samples.append((species_key, number_of_foreground_samples, sample_length_sec))
+                    recoding_time_sec = self.samples_metadata[sample_id].get('recording_time_sec', None)
+                    recoding_time_sec = recoding_time_sec if recoding_time_sec is not None else 0 
+                    samples_length_sec.append(recoding_time_sec)
+                total_samples_length_sec = sum(samples_length_sec)
+                species_with_foreground_samples.append((species_key, number_of_foreground_samples, total_samples_length_sec))
             
             if number_of_background_samples > 0:
                 #sample_length_sec = sum([self.samples_metadata[sample_id].get('recording_time_sec', 0) for sample_id in background_samples])
@@ -109,7 +112,7 @@ class DatasetInfo:
         print(f"Samples for {len(species_with_foreground_samples)} species with foreground recordings")
         print(f"The top {show_top_n} species with foreground recordings:")
         for i in range(show_top_n):
-            print(f"Species key: {species_with_foreground_samples[i][0]} Number of samples: {species_with_foreground_samples[i][1]} Total length: {str(datetime.timedelta(species_with_foreground_samples[1][2]))}")
+            print(f"Species key: {species_with_foreground_samples[i][0]} Number of samples: {species_with_foreground_samples[i][1]} Total length: {str(datetime.timedelta(seconds=species_with_foreground_samples[i][2]))}") #
             
     def get_downloaded_species_sample_ids(self, species_key: int, sample_recording_type: SampleRecordingType = None) -> list:
         """
