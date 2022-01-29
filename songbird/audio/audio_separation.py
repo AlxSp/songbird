@@ -472,8 +472,8 @@ def pytorch_create_and_save_dateset(
         for data_info_file in os.listdir(test_data_info_path): 
             with open(os.path.join(test_data_info_path, data_info_file), 'r') as f:
                 data_info = json.load(f)
-                max_value = max(max_value, data_info['max'])
-                min_value = min(min_value, data_info['min'])
+                # max_value = max(max_value, data_info['max'])
+                # min_value = min(min_value, data_info['min'])
                 samples_count += len(data_info['sample_indices'])
         
                 
@@ -562,15 +562,16 @@ if __name__ == "__main__":
     
     dataset_info.describe_downloaded_samples()
     
-    sample_ids = dataset_info.get_downloaded_species_sample_ids(2473663, SampleRecordingType.Foreground)
-    sample_ids += dataset_info.get_downloaded_species_sample_ids(9475738, SampleRecordingType.Foreground)
-    sample_ids += dataset_info.get_downloaded_species_sample_ids(2490719, SampleRecordingType.Foreground)
-    sample_ids += dataset_info.get_downloaded_species_sample_ids(2482593, SampleRecordingType.Foreground)
-    sample_ids += dataset_info.get_downloaded_species_sample_ids(2494422, SampleRecordingType.Foreground)
-
+    recording_type = SampleRecordingType.Foreground
+    species_ids = [2473663, 9475738, 2490719, 2482593, 2494422, 2493052]
+    
+    sample_ids = []
+    for species_id in species_ids:
+        sample_ids += dataset_info.get_downloaded_species_sample_ids(species_id, recording_type)
+    
     sample_ids = list(set(sample_ids)) # ensure that the sample ids are unique (no duplicates)
 
-    create_new = False
+    # create_new = False
 
     # dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'2species_samples_xd{img_dim[0]}_yd{img_dim[1]}_iss{img_step_size}')
     sample_rate  = 44100
