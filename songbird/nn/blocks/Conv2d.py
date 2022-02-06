@@ -128,7 +128,7 @@ class DResidualBlockConv2d(nn.Module):
         #if the stride is not 1 or the input and output channels are not the same, transform residual value into the right shape
         if stride != 1 or in_channels != out_channels:
             self.residual = nn.Sequential(
-                nn.AvgPool2d(kernel_size=2, stride=2),
+                nn.AvgPool2d(kernel_size=2, stride=2) if stride != 1 else nn.Identity(),
                 nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, bias=False),
                 nn.BatchNorm2d(num_features=out_channels)
             )
