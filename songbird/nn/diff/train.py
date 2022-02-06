@@ -4,7 +4,7 @@ from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTenso
 from songbird.nn.vae.loss import mse_loss_function as loss_function #loss_function, 
 #from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
 from songbird.nn.diff.ddpm import DenoiseDiffusion
-from songbird.nn.diff.alt_unet import UNet
+from songbird.nn.diff.unet import UNet
 #import songbird.nn.vae.models.conv2d_vae as vae
 
 
@@ -184,23 +184,23 @@ plot_params = {
 
 image_channels = 1
 image_size = img_dim
-n_channels = 64
-channel_multipliers = [1, 2, 2, 4]
-has_attention = [False, False, False, True]
+n_channels = 32
+channel_multipliers = [1, 1, 1, 1]
+has_attention = [False, False, False, False]
 
 n_steps = 1_000
-batch_size = 64
+batch_size = 16
 n_samples = 16
 
 learning_rate = 2e-5
 epochs = 15
 
-model = UNet()#image_channels = image_channels, n_channels = n_channels, ch_mults = channel_multipliers, has_attn = has_attention)
+model = UNet(image_channels = image_channels, n_channels = n_channels, ch_mults = channel_multipliers, has_attn = has_attention)
 
 
 set_random_seed(random_seed) # for reproducibility set random seed after the model is initialized
 
-writer.add_graph(model, (next(iter(train_loader))[0])) # add model to tensorboard and
+writer.add_graph(model, (next(iter(train_loader))[0], torch.randint(0, n_steps, (1,), dtype=torch.long))) # add model to tensorboard and
 
 #%%
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -293,7 +293,7 @@ for epoch in range(start_epoch, epochs):
             # labels.append(batch.detach())
 
             val_x = batch
-            val_x_hat = sample(n_steps, 4, batch.shape[2], batch.shape[3])
+            val_x_hat = sample(n_steps, 4, batch.shape[1], batch.shape[2], batch.shape[3], device)
 
         print(f"epoch: {epoch:5} | batch: {100:3}% | train loss: {train_loss / len(train_loader.dataset):16.6f} | test loss: {test_loss / len(test_loader.dataset):16.6f}", end = "\r")
 

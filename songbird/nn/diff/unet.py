@@ -154,7 +154,7 @@ class Upsample(nn.Module):
         
         self.conv = nn.ConvTranspose2d(n_channels, n_channels, kernel_size = (4,4), stride = (2, 2), padding = (1,1))
         
-    def  forward(self, x: torch.Tensor):
+    def  forward(self, x: torch.Tensor, t: torch.Tensor):
         return self.conv(x)
     
 class UNet(nn.Module):

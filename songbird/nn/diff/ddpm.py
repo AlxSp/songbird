@@ -42,11 +42,11 @@ class DenoiseDiffusion:
     
     def p_sample(self, xt: torch.Tensor, t: torch.Tensor):
         eps_theta = self.eps_model(xt, t)
-        alpha_bar = gather(self.alpha_bar, xt)
-        alpha = gather(self.alpha, xt)
+        alpha_bar = gather(self.alpha_bar, t)
+        alpha = gather(self.alpha, t)
         eps_coef = (1 - alpha) / (1 - alpha_bar) ** 0.5
         mean = 1 / (alpha ** 0.5) * (xt - eps_coef * eps_theta)
-        var =  gather(self.sigma2, xt)
+        var =  gather(self.sigma2, t)
         eps = torch.randn(xt.shape, device=xt.device)
         
         return mean + (var ** 0.5 * eps)
