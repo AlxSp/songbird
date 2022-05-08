@@ -42,7 +42,7 @@ class ResidualBottleneckBlockConv2d(nn.Module):
     
 class DResidualBottleneckBlockConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, groups=1):
-        super(ResidualBottleneckBlockConv2d, self).__init__()
+        super(DResidualBottleneckBlockConv2d, self).__init__()
         # bias is set to False because we are using batch normalization
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=1, bias=False) 
         self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups, bias=False)
