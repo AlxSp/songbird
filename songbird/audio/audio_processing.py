@@ -383,7 +383,31 @@ def audio_events_to_csv(events, sample_id):
 ######################################################################################################################
 # plotting ###########################################################################################################
 
-def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, sample_id, title = 'Spectrogram', x_label = None, y_labels = None, y_tick_num = 6, audio_events = []):
+def add_time_ticks_to_axis(ax, time_steps, step_size, sample_rate, max_tick_num = 16):
+    
+    time_span_sec = time_steps * step_size / sample_rate #calculate the time span in seconds
+
+    if time_span_sec / 60 < 1: #if time span is less than 1 minute
+        formatter = ticker.FuncFormatter(lambda ms, _: time.strftime('%-S', time.gmtime(ms * step_size / sample_rate)))
+        x_label = 'Time (sec)'
+    elif time_span_sec / (60 * 60) < 1: #if time span is less than 1 hour
+        formatter = ticker.FuncFormatter(lambda ms, _: time.strftime('%-M:%S', time.gmtime(ms * step_size / sample_rate)))
+        x_label = 'Time (min:sec)'
+    else: #if time span is more than 1 hour
+        formatter = ticker.FuncFormatter(lambda ms, _: time.strftime('%-H:%M:%S', time.gmtime(ms * step_size / sample_rate)))
+        x_label = 'Time (hour:min:sec)'
+
+    ax.set_xlim(left = 0, right = time_steps) #set the x axis limits
+    ax.set_xlabel(x_label)
+    ax.xaxis.set_major_formatter(formatter)
+
+    locator_num = max_tick_num if int(time_span_sec) >= max_tick_num else int(time_span_sec)
+    ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
+
+    ax.xaxis.set_ticks_position('bottom') #set x ticks to bottom of graph 
+
+
+def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, title = 'Spectrogram', y_labels = None, y_tick_num = 6, audio_events = []):
     f = plt.figure(figsize=(10,5), dpi= 80)
     ax = f.add_subplot()
     ax.set_title(title) #set title 
@@ -394,14 +418,7 @@ def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, sample_id,
         for index, event in enumerate(audio_events):
             ax.add_patch(patches.Rectangle((event[0], event[2]), event[1] - event[0], event[3] - event[2], linewidth=1, edgecolor=colors[index], facecolor='none'))
 
-
-    ax.xaxis.set_ticks_position('bottom') #set x ticks to bottom of graph 
-    ax.set_xlabel('Time (sec)')
-    locator_num = 16 if spectrogram_matrix.shape[1] * step_size // sample_rate >= 16 else spectrogram_matrix.shape[1] * step_size // sample_rate
-    ax.set_xlim(left = 0, right = spectrogram_matrix.shape[1])
-    ax.xaxis.set_major_locator(ticker.LinearLocator(locator_num))
-    formatter = ticker.FuncFormatter(lambda ms, x: time.strftime('%-S', time.gmtime(ms * step_size // sample_rate)))
-    ax.xaxis.set_major_formatter(formatter)
+    add_time_ticks_to_axis(ax, spectrogram_matrix.shape[1], step_size, sample_rate)
     
     ax.invert_yaxis() #have y axis start from the bottom
     ax.set_ylabel('Hz')
@@ -412,9 +429,10 @@ def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, sample_id,
     plt.tight_layout()
     plt.colorbar(spectrogram, format='%+2.0f dB')
 
-    fig_path = os.path.join(plots_path, str(sample_id), title + '.png')
+    plt.show()
+    # fig_path = os.path.join(plots_path, str(sample_id), title + '.png')
 
-    plt.savefig(fig_path)
+    # plt.savefig(fig_path)
 
 def save_spectrogram_plot_with_peaks(spectrogram_matrix, peak_coordinates, sample_rate, step_size, sample_id, title = 'Spectrogram', x_label = None, y_labels = None, y_tick_num = 6, audio_events = []):
     f = plt.figure(figsize=(10,5), dpi= 80)
