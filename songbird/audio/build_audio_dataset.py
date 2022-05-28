@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 import tqdm
 from multiprocessing import Pool
 
+#%%
 @dataclass 
 class SpectrogramEvent:
     start_time_index: int
@@ -51,7 +52,7 @@ def get_threshold_mask(spectrogram, std_threshold):
     mask = maximums > np.mean(maximums) + std_threshold * np.std(maximums)
     return mask
 
-def get_audio_events(mask):
+def find_objects_in_mask(mask):
     labeled_mask, num_of_events = sp.ndimage.label(mask)
     audio_event_data_slices = sp.ndimage.find_objects(labeled_mask)
     return audio_event_data_slices
@@ -65,6 +66,152 @@ def spectrogram_indices_to_seconds(start_window, end_window, stft_window_size, s
     start_time = start_window * stft_step_size / sample_rate
     end_time = (end_window * stft_step_size + stft_window_size) / sample_rate
     return start_time, end_time
+
+def project_events_to_original_sample(events, cropped_frequency_bins, frequency_bins):
+    projected_events = []
+    for time_start_index, time_end_index, freq_start_index, freq_end_index in events:
+        start_freq = cropped_frequency_bins[freq_start_index]
+        end_freq = cropped_frequency_bins[freq_end_index - 1]
+        projected_freq_start_index = np.argmin(np.abs(frequency_bins - start_freq))
+        projected_freq_end_index = np.argmin(np.abs(frequency_bins - end_freq))
+        projected_events.append((time_start_index, time_end_index, projected_freq_start_index, projected_freq_end_index))
+
+    return projected_events
+
+def create_spectrogram(
+        sample, 
+        sample_rate, 
+        stft_window_size, 
+        stft_step_size, 
+        ):
+
+    spectrogram_transform = torchaudio.transforms.Spectrogram(
+      n_fft = stft_window_size,
+      win_length = stft_window_size,
+      hop_length = stft_step_size,
+      center = True,
+      pad_mode = "reflect",
+      power = 2.0,
+    ).to(device)
+    # create spectrogram
+    spectrogram = spectrogram_transform(torch.from_numpy(sample).to(device))
+    spectrogram =  torchaudio.transforms.AmplitudeToDB('power', top_db=80)(spectrogram)
+    spectrogram = spectrogram.to("cpu").numpy()
+    # get frquency bins    
+    frequency_bins = torch.fft.rfftfreq(stft_window_size, d = 1.0/sample_rate).numpy()
+    
+    return spectrogram, frequency_bins
+
+def crop_spectrogram_to_frequency_range(spectrogram, frequency_bins, frequency_range_size, lower_frequency_margin):
+    freq_max_index = frequency_range_size + lower_frequency_margin#np.argmin(np.abs(frequency_bins - max_frequency))
+    freq_min_index =  lower_frequency_margin
+    cropped_spectrogram, cropped_frequency_bins = spectrogram[freq_min_index:freq_max_index,:], frequency_bins[freq_min_index:freq_max_index]
+    
+    return cropped_spectrogram, cropped_frequency_bins
+
+def get_events_from_spectrogram_mask(spectrogram_mask):
+    spectrogram_event_data_slices = find_objects_in_mask(spectrogram_mask)
+    # convert audio events to spectrogram events
+    return [[time_slice.start, time_slice.stop, frequency_slice.start, frequency_slice.stop] for frequency_slice, time_slice in spectrogram_event_data_slices]
+
+def get_events_from_spectrogram(
+        sample, 
+        sample_rate, 
+        stft_window_size, 
+        stft_step_size, 
+        frequency_range_size,
+        lower_frequency_margin,
+        std_threshold = 1.2,
+        device = "cpu"
+        ):
+    
+    spectrogram_transform = torchaudio.transforms.Spectrogram(
+      n_fft = stft_window_size,
+      win_length = stft_window_size,
+      hop_length = stft_step_size,
+      center = True,
+      pad_mode = "reflect",
+      power = 2.0,
+    ).to(device)
+    # create spectrogram
+    spectrogram = spectrogram_transform(torch.from_numpy(sample).to(device))
+    spectrogram =  torchaudio.transforms.AmplitudeToDB('power', top_db=80)(spectrogram)
+    spectrogram = spectrogram.to("cpu").numpy()
+    # get frquency bins    
+    frequency_bins = torch.fft.rfftfreq(stft_window_size, d = 1.0/sample_rate).numpy()
+
+    # crop spectrogram frequencies
+    freq_max_index = frequency_range_size + lower_frequency_margin#np.argmin(np.abs(frequency_bins - max_frequency))
+    freq_min_index =  lower_frequency_margin
+    cropped_spectrogram, frequency_bins =  spectrogram[freq_min_index:freq_max_index,:], frequency_bins[freq_min_index:freq_max_index]
+    
+    # get threshold mask
+    mask = get_threshold_mask(cropped_spectrogram, std_threshold)
+    
+    # detect audio events from mask and return audio events
+    spectrogram_event_data_slices = find_objects_in_mask(mask)
+    # convert audio events to spectrogram events
+    spectrogram_events_arr = [[time_slice.start, time_slice.stop, frequency_slice.start, frequency_slice.stop] for frequency_slice, time_slice in spectrogram_event_data_slices]
+    
+    return spectrogram_events_arr, spectrogram.shape
+
+def get_events_from_time_series():
+    # TODO: implement
+    raise NotImplementedError
+
+def convert_events_to_sample_slice_indices_array(events_arr, sampling_window_size, sampling_step_size, sampling_padding_size, data_size):
+    """
+    Converts a list of events into a list of event slice indices given the sampling arguments.
+
+    ----------
+    Parameters:
+        events_arr: List[]
+            List of events to convert.
+        sampling_window_size: int
+            Size of the window to sample from.
+        sampling_step_size: int
+            Size of the step to sample with.
+        sampling_padding_size: int
+            Size of the padding to add to the start and end of the window.
+        data_size: int
+            Size of the data to sample from.
+
+    ----------
+    Returns:
+        sample_slice_indices_arr: np.array[[int, int]]
+            Array of event slice indices.
+    """
+    start_indices_arr = []
+    end_indices_arr = []
+
+    for event_start_index, event_end_index in events_arr: # audio events are in spectrogram coordinates
+        event_length = event_end_index - event_start_index    #length of the event
+
+        if event_length < sampling_window_size: #if the sample time dimension is larger than the length of the event
+            #adjust the length of the event to fit the sample time dimension
+            event_middle_index = event_length // 2 + event_start_index   #index of the middle of the event
+            event_end_index = event_middle_index + sampling_window_size // 2 #adjust the end index of the event to fit the sample time dimension
+            event_start_index = event_end_index - sampling_window_size  #adjust the start index of the event to fit the sample time dimension
+        
+        #index of the start of the event with sample padding. Set to zero if index is negative
+        sample_range_start_index = max(event_start_index - sampling_padding_size, 0) 
+        #index of the end of the event with sample padding. Set to spectrogram length if index is greater than spectrogram length
+        sample_range_end_index = min(event_end_index + sampling_padding_size, data_size) 
+
+        start_indices_arr.append(np.arange(sample_range_start_index, sample_range_end_index - sampling_window_size, sampling_step_size)) # get all start indices for the event
+        end_indices_arr.append(np.arange(sample_range_start_index + sampling_window_size, sample_range_end_index, sampling_step_size)) # get all end indices for the event
+
+    if not len(start_indices_arr) > 0: #if there are no audio events
+        return []
+    
+    start_indices_arr = np.concatenate(start_indices_arr) #concatenate all the slice indices into a single array
+    end_indices_arr = np.concatenate(end_indices_arr) #concatenate all the slice indices into a single array
+    sample_slice_indices_arr = np.column_stack((start_indices_arr, end_indices_arr)) #convert the two separate index arrays into a 2d array of [[start, end], ...] 
+    
+    sample_slice_indices_arr = np.unique(sample_slice_indices_arr, axis = 0) # remove duplicate slices
+    
+    return sample_slice_indices_arr
+    
 
 def torch_create_audio_samples_from_events(
         sample_id,
@@ -80,87 +227,23 @@ def torch_create_audio_samples_from_events(
     ):
     
     # load audio from file
-    sample, _ = ap.load_audio_sample(sample_id, sample_rate)
+    audio_sample, _ = ap.load_audio_sample(sample_id, sample_rate)
     
     # create high pass filer
     sos = signal.butter(10, 3500, 'hp', fs=sample_rate, output='sos')
     # apply high pass filter
-    filtered_sample = signal.sosfilt(sos, sample)
+    filtered_audio_sample = signal.sosfilt(sos, audio_sample)
     # create spectrogram
-    spectrogram_transform = torchaudio.transforms.Spectrogram(
-      n_fft = stft_window_size,
-      win_length = stft_window_size,
-      hop_length = stft_step_size,
-      center = True,
-      pad_mode = "reflect",
-      power = 2.0,
-    ).to(device)
-    # create spectrogram
-    spectrogram = spectrogram_transform(torch.from_numpy(filtered_sample).to(device))
-    spectrogram =  torchaudio.transforms.AmplitudeToDB('power', top_db=80)(spectrogram)
-    spectrogram = spectrogram.to("cpu").numpy()
-    # get frquency bins    
-    frequency_bins = torch.fft.rfftfreq(stft_window_size, d = 1.0/sample_rate).numpy()
+    
+    spectrogram_events_arr, spectrogram_shape = get_events_from_spectrogram(filtered_audio_sample, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, device = device)
 
-    # crop spectrogram frequencies
-    freq_max_index = frequency_range_size + lower_frequency_margin#np.argmin(np.abs(frequency_bins - max_frequency))
-    freq_min_index =  lower_frequency_margin
-    cropped_spectrogram, frequency_bins =  spectrogram[freq_min_index:freq_max_index,:], frequency_bins[freq_min_index:freq_max_index]
-    
-    # get threshold mask
-    std_threshold = 1.2
-    mask = get_threshold_mask(cropped_spectrogram, std_threshold)
-    
-    # detect audio events from mask and return audio events
-    spectrogram_event_data_slices = get_audio_events(mask)
-    # convert audio events to spectrogram events
-    spectrogram_events_arr = [SpectrogramEvent(time_slice.start, time_slice.stop, frequency_slice.start, frequency_slice.stop) for frequency_slice, time_slice in spectrogram_event_data_slices]
+    audio_events_arr = [spectrogram_indices_to_time_series_indices(start_time_index, end_time_index, stft_window_size, stft_step_size) for start_time_index, end_time_index, _, _ in spectrogram_events_arr]
 
-    # find the actual sample indices
-    sample_time_dim = sample_dim[1]
-    start_indices_arr = []
-    end_indices_arr = []
+    sample_slice_indices_arr = convert_events_to_sample_slice_indices_array(audio_events_arr, sample_dim[0], sampling_step_size, sampling_padding_size, len(audio_sample))
 
-    for spectrogram_event in spectrogram_events_arr: # audio events are in spectrogram coordinates
+    audio_sample_arr = np.asarray([audio_sample[start_index:end_index] for start_index, end_index in sample_slice_indices_arr])
 
-        event_start_index = spectrogram_event.start_time_index
-        event_end_index = spectrogram_event.end_time_index
-        event_length = event_end_index - event_start_index    #length of the event
-
-        if event_length < sample_time_dim: #if the sample time dimension is larger than the length of the event
-            #adjust the length of the event to fit the sample time dimension
-            event_middle_index = event_length // 2 + event_start_index   #index of the middle of the event
-            event_end_index = event_middle_index + sample_time_dim // 2 #adjust the end index of the event to fit the sample time dimension
-            event_start_index = event_end_index - sample_time_dim  #adjust the start index of the event to fit the sample time dimension
-        
-        #index of the start of the event with sample padding. Set to zero if index is negative
-        sample_range_start_index = max(event_start_index - sampling_padding_size, 0) 
-        #index of the end of the event with sample padding. Set to spectrogram length if index is greater than spectrogram length
-        sample_range_end_index = min(event_end_index + sampling_padding_size, spectrogram.shape[1]) 
-
-        start_indices_arr.append(np.arange(sample_range_start_index, sample_range_end_index - sample_time_dim, sampling_step_size)) # get all start indices for the event
-        end_indices_arr.append(np.arange(sample_range_start_index + sample_time_dim, sample_range_end_index, sampling_step_size)) # get all end indices for the event
-
-    spectrogram_events_found = len(start_indices_arr) > 0
-
-    if not spectrogram_events_found: #if there are no audio events
-        return [], [], spectrogram_events_found
-    
-    start_indices_arr = np.concatenate(start_indices_arr) #concatenate all the slice indices into a single array
-    end_indices_arr = np.concatenate(end_indices_arr) #concatenate all the slice indices into a single array
-    sample_slice_indices_arr = np.column_stack((start_indices_arr, end_indices_arr)) #convert the two separate index arrays into a 2d array of [[start, end], ...] 
-    
-    sample_slice_indices_arr = np.unique(sample_slice_indices_arr, axis = 0) # remove duplicate slices
-    
-    audio_slice_times_arr = np.array([[spectrogram_indices_to_time_series_indices(start_index, end_index, stft_window_size, stft_step_size)] for start_index, end_index in sample_slice_indices_arr])
-    
-    print(len(sample))
-    
-    print()
-    
-    
-    
-    
+    return audio_sample_arr, sample_slice_indices_arr
     
 def torch_create_spectrogram_samples(
         sample_id, 
@@ -228,7 +311,7 @@ def torch_create_spectrogram_samples(
     # ap.save_spectrogram_plot(cropped_spectrogram * mask, sample_rate, stft_step_size, sample_id, title = "Pytorch Masked Spectogram (Decibel)", y_labels = frequency_bins)
 
     # start_time = process_time()
-    audio_event_data_slices = get_audio_events(mask)
+    audio_event_data_slices = get_events_from_spectrogram(mask)
     audio_events_arr = [SpectrogramEvent(time_slice.start, time_slice.stop, frequency_slice.start, frequency_slice.stop) for frequency_slice, time_slice in audio_event_data_slices]
     # print(f"Task: {'Get Audio Events':<28} | Time taken: {process_time() - start_time:>9.3f} sec |")
 
@@ -281,12 +364,12 @@ def torch_create_spectrogram_samples(
     # print(f"Task: {'Create samples':<28} | Time taken: {process_time() - start_time:>9.3f} sec |")
     return spectrogram_sample_arr, sample_slice_indices_arr, audio_events_found
 
-def create_train_test_indices(sample_slice_indices_arr, sample_dim, sampling_step_size, sampling_padding_size, test_split = 0.1):
-    samples_num = sample_slice_indices_arr.shape[0]
-    overlapping_sample_num = max(sample_dim[1] - sampling_step_size, 0) # number of following samples that share overlapping data with a sample 
+def create_train_test_indices(sample_slice_indices_arr, sampling_window_size, sampling_step_size, sampling_padding_size, test_split = 0.1):
+    sample_count = sample_slice_indices_arr.shape[0]
+    overlapping_sample_num = sampling_window_size // sampling_step_size # number of following samples that share overlapping data with a sample 
     additional_samples_to_remove_per_test_sample = overlapping_sample_num * 2 # since both the preceding and following samples are overlapping the number of samples to remove is twice the number of 'overlapping' samples
-    test_samples_num = int(samples_num / ((1-test_split)/test_split + 1 + additional_samples_to_remove_per_test_sample)) # minimum number of test samples. Since the the overlapping samples will be removed from the train set, the overlapping samples have to be accounted for in the test size calculation
-    all_indices = np.arange(samples_num)
+    test_samples_num = int(sample_count / ((1-test_split)/test_split + 1 + additional_samples_to_remove_per_test_sample)) # minimum number of test samples. Since the the overlapping samples will be removed from the train set, the overlapping samples have to be accounted for in the test size calculation
+    all_indices = np.arange(sample_count)
     
     if test_samples_num == 0:
         return all_indices, np.array([])
@@ -315,7 +398,7 @@ def create_train_test_indices(sample_slice_indices_arr, sample_dim, sampling_ste
     test_indices_arr = np.asarray(consecutive_testable_indices_arr)[random_indices]
     # TODO: initialize indices_to_remove_from_train_set with numpy array since the shape is already known
     indices_to_remove_from_train_set = np.concatenate([np.arange(remove_index_range[0], remove_index_range[1]) for remove_index_range in test_indices_arr]) #get the indices to remove from the train set
-    train_selection = np.ones(samples_num, dtype = bool)
+    train_selection = np.ones(sample_count, dtype = bool)
     train_selection[indices_to_remove_from_train_set] = False #remove the indices from the train set
 
     train_indices_arr = all_indices[train_selection] #get the train indices
@@ -344,9 +427,9 @@ def pytorch_create_samples_from_audio(
     
     set_random_seed(random_seed)
     
-    spectrogram_sample_arr, sample_slice_indices_arr, audio_events_found = torch_create_audio_samples_from_events(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, device)
+    spectrogram_sample_arr, sample_slice_indices_arr = torch_create_audio_samples_from_events(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, device)
     
-    if audio_events_found:
+    if spectrogram_sample_arr.size != 0:
         sample_max = np.max(spectrogram_sample_arr).astype(np.float32)
         sample_min = np.min(spectrogram_sample_arr).astype(np.float32)
     
@@ -357,7 +440,7 @@ def pytorch_create_samples_from_audio(
             test_data_path = os.path.join(dataset_path, 'test', 'data')
             test_samples_file_path = os.path.join(test_data_path, f"{sample_id}.bin")
 
-            train_indices, test_indices = create_train_test_indices(sample_slice_indices_arr, sample_dim, sampling_step_size, sampling_padding_size, test_split = validation_split)
+            train_indices, test_indices = create_train_test_indices(sample_slice_indices_arr, sample_dim[0], sampling_step_size, sampling_padding_size, test_split = validation_split)
             
             np.asarray(spectrogram_sample_arr[train_indices], dtype = np.float32).tofile(train_samples_file_path)
             train_data_info_path = os.path.join(dataset_path, 'train', 'data_info')
@@ -415,6 +498,7 @@ def pytorch_create_samples_from_audio(
 
 def pytorch_create_and_save_dateset(
         dataset_path, 
+        sample_type,
         sample_ids, 
         sample_rate, 
         stft_window_size, 
@@ -512,6 +596,7 @@ def pytorch_create_and_save_dateset(
                 
                 "build_parameters" : {
                     "dataset_path" : dataset_path,
+                    "sample_type" : sample_type,
                     "sample_ids" : sample_ids, 
                     "sample_rate" : sample_rate,
                     "stft_window_size" : stft_window_size,
@@ -539,7 +624,9 @@ def pytorch_create_and_save_dateset(
                 
                 "build_parameters" : {
                     "dataset_path" : dataset_path,
+                    "sample_type" : sample_type,
                     "sample_ids" : sample_ids, 
+                    "sample_type" : sample_type,
                     "sample_rate" : sample_rate,
                     "stft_window_size" : stft_window_size,
                     "stft_step_size" : stft_step_size,
@@ -593,55 +680,170 @@ def pytorch_create_and_save_dateset(
                 }
             }, f, indent=2)
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     
-    @dataclass
-    class DatasetParameters:
-        dataset_path : str = "None"
-        # sample_ids: List[int] = field(default_factory=lambda: [2473663, 9475738, 2490719, 2482593, 2494422, 2493052])
-        sample_rate : int = 44100
+#     @dataclass
+#     class SpectrogramDatasetParameters:
+#         sample_type : str = 'spectrogram'
+#         dataset_path : str = None
+#         # sample_ids: List[int] = field(default_factory=lambda: [2473663, 9475738, 2490719, 2482593, 2494422, 2493052])
+#         sample_rate : int = 44100
 
-        stft_window_size: int = 2048
-        stft_step_size: int = 512
+#         stft_window_size: int = 2048
+#         stft_step_size: int = 512
 
-        sample_dim: tuple = (512, 32) # (freq, time)
-        sampling_step_size: int = 1  # (time)
-        sampling_padding_size: int  = sample_dim[1] // 2
-        frequency_range_size: int  = sample_dim[0]
+#         sample_dim: tuple = (512, 32) # (freq, time)
+#         sampling_step_size: int = 1  # (time)
+#         sampling_padding_size: int  = sample_dim[1] // 2
+#         frequency_range_size: int  = sample_dim[0]
 
-        lower_frequency_margin: int  = 100
-        validation_split: int  = 0.1
-        random_seed: int  = 42
-        num_workers: int  = 1
-        device: str = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#         lower_frequency_margin: int  = 100
+#         validation_split: int  = 0.1
+#         random_seed: int  = 42
+#         num_workers: int  = 1
+#         device: str = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+#     @dataclass
+#     class AudioDatasetParameters:
+#         sample_type : str = 'audio'
+#         dataset_path : str = None
+#         # sample_ids: List[int] = field(default_factory=lambda: [2473663, 9475738, 2490719, 2482593, 2494422, 2493052])
+#         sample_rate : int = 44100
+
+#         stft_window_size: int = 2048
+#         stft_step_size: int = 512
+
+#         sample_dim: tuple = (32768, ) # (time)
+#         sampling_step_size: int = 512  # (time)
+#         sampling_padding_size: int  = sample_dim[0] // 2
+
+#         frequency_range_size: int  = 512
+#         lower_frequency_margin: int  = 100
+#         validation_split: int  = 0.1
+#         random_seed: int  = 42
+#         num_workers: int  = 1
+#         device: str = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-    dataset_params = DatasetParameters()
+#     dataset_params = AudioDatasetParameters()
     
-    project_dir = get_parent_dir(os.path.abspath(__file__), num_levels = 3)
+#     project_dir = get_parent_dir(os.path.abspath(__file__), num_levels = 3)
     
-    dataset_info = DatasetInfo()
+#     dataset_info = DatasetInfo()
     
-    dataset_info.describe_downloaded_samples()
+#     dataset_info.describe_downloaded_samples()
     
-    recording_type = SampleRecordingType.Foreground
-    species_ids = [2473663, 9475738, 2490719, 2482593, 2494422, 2493052]
+#     recording_type = SampleRecordingType.Foreground
+#     species_ids = [2473663, 9475738, 2490719, 2482593, 2494422, 2493052]
     
-    sample_ids = []
-    for species_id in species_ids:
-        sample_ids += dataset_info.get_downloaded_species_sample_ids(species_id, recording_type)
+#     sample_ids = []
+#     for species_id in species_ids:
+#         sample_ids += dataset_info.get_downloaded_species_sample_ids(species_id, recording_type)
     
-    sample_ids = list(set(sample_ids))[:1] # ensure that the sample ids are unique (no duplicates)
+#     sample_ids = list(set(sample_ids))[:15] # ensure that the sample ids are unique (no duplicates)
     
-    # recording_type = SampleRecordingType.Foreground
+#     # recording_type = SampleRecordingType.Foreground
     
-    #TODO: come up with a better naming convention
-    dataset_params.dataset_path = os.path.join(project_dir, 'data', 'spectrogram_samples',f'test_pt_samples_0d{dataset_params.sample_dim[0]}_1d{dataset_params.sample_dim[1]}_iss{dataset_params.sampling_step_size}')
+#     now = datetime.utcnow()
+#     dataset_params.dataset_path = os.path.join(project_dir, 'data', 'processed', dataset_params.sample_type, now.strftime("%Y-%m-%d_%H"))
     
-    print(f"Dataset set will be stored at: {dataset_params.dataset_path}")
-    print("Building dataset")
+#     print(f"Dataset set will be stored at: {dataset_params.dataset_path}")
+#     print("Building dataset")
     
-    pytorch_create_and_save_dateset(sample_ids = sample_ids, **asdict(dataset_params))
-    print("Dataset built")
-    print(f"Stored in location: {dataset_params.dataset_path}")
+#     pytorch_create_and_save_dateset(sample_ids = sample_ids, **asdict(dataset_params))
+#     print("Dataset built")
+#     print(f"Stored in location: {dataset_params.dataset_path}")
 
 # %%
+
+@dataclass
+class AudioDatasetParameters:
+    sample_type : str = 'audio'
+    dataset_path : str = None
+    # sample_ids: List[int] = field(default_factory=lambda: [2473663, 9475738, 2490719, 2482593, 2494422, 2493052])
+    sample_rate : int = 44100
+
+    stft_window_size: int = 2048
+    stft_step_size: int = 512
+
+    sample_dim: tuple = (32768, ) # (time)
+    sampling_step_size: int = 512  # (time)
+    sampling_padding_size: int  = sample_dim[0] // 2
+
+    frequency_range_size: int  = 512
+    lower_frequency_margin: int  = 100
+    validation_split: int  = 0.1
+    random_seed: int  = 42
+    num_workers: int  = 1
+    device: str = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# dataset_params = AudioDatasetParameters()
+#%%
+sample_type : str = 'audio'
+dataset_path : str = None
+# sample_ids: List[int] = field(default_factory=lambda: [2473663, 9475738, 2490719, 2482593, 2494422, 2493052])
+sample_rate : int = 44100
+
+stft_window_size: int = 2048
+stft_step_size: int = 512
+
+sample_dim: tuple = (32768, ) # (time)
+sampling_step_size: int = 512  # (time)
+sampling_padding_size: int  = sample_dim[0] // 2
+
+frequency_range_size: int  = 512
+lower_frequency_margin: int  = 100
+validation_split: int  = 0.1
+random_seed: int  = 42
+num_workers: int  = 1
+device: str = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+test_sample_id = '2243735323' #'2243804495' #'2243735323'
+
+std_threshold = 1.2
+
+plot = False
+#%%
+audio_sample, _ = ap.load_audio_sample(test_sample_id, sample_rate)
+
+# create high pass filer
+sos = signal.butter(10, 3500, 'hp', fs=sample_rate, output='sos')
+# apply high pass filter
+filtered_audio_sample = signal.sosfilt(sos, audio_sample)
+# create spectrogram
+
+#%%
+spectrogram, frequency_bins = create_spectrogram(filtered_audio_sample, sample_rate, stft_window_size, stft_step_size)
+
+#%%
+if plot: ap.save_spectrogram_plot(spectrogram, sample_rate, stft_step_size, test_sample_id, y_labels=frequency_bins)
+# spectrogram_events_arr, spectrogram_shape = get_events_from_spectrogram(filtered_audio_sample, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, device = device)
+#%%
+# cropped_spectrogram, cropped_frequency_bins = crop_spectrogram_to_frequency_range(spectrogram, frequency_bins, lower_frequency_margin, frequency_range_size)
+
+# #%%
+# ap.save_spectrogram_plot(cropped_spectrogram, sample_rate, stft_step_size, test_sample_id, y_labels=cropped_frequency_bins)
+
+
+#%%
+mask = get_threshold_mask(spectrogram, std_threshold)
+
+#%%
+if plot: ap.save_spectrogram_plot(mask, sample_rate, stft_step_size, test_sample_id, y_labels=frequency_bins)
+
+#%%
+spectrogram_events_arr = get_events_from_spectrogram_mask(mask)
+
+
+#%%
+if plot: ap.save_spectrogram_plot(spectrogram, sample_rate, stft_step_size, test_sample_id, y_labels=frequency_bins, audio_events=spectrogram_events_arr)
+
+#%%
+audio_events_arr = [spectrogram_indices_to_time_series_indices(start_time_index, end_time_index, stft_window_size, stft_step_size) for start_time_index, end_time_index, _, _ in spectrogram_events_arr]
+#%%
+sample_slice_indices_arr = convert_events_to_sample_slice_indices_array(audio_events_arr, sample_dim[0], sampling_step_size, sampling_padding_size, len(audio_sample))
+
+audio_sample_arr = np.asarray([audio_sample[start_index:end_index] for start_index, end_index in sample_slice_indices_arr])
+
+#%%
+train_indices, test_indices = create_train_test_indices(sample_slice_indices_arr, sample_dim[0], sampling_step_size, sampling_padding_size, test_split = validation_split)
+#spectrogram_sample_arr, sample_slice_indices_arr = torch_create_audio_samples_from_events(test_sample_id, sample_rate = 44100, stft_window_size= 2048, stft_step_size= 512, frequency_range_size= 512, lower_frequency_margin= 100, sample_dim= (32768, ), sampling_step_size= 512, sampling_padding_size =32768 // 2, device= "cpu")

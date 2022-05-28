@@ -383,6 +383,11 @@ def audio_events_to_csv(events, sample_id):
 ######################################################################################################################
 # plotting ###########################################################################################################
 
+def add_rectangles_to_axes(ax, event_windows):
+    colors = cm.rainbow(np.linspace(0, 1, len(event_windows)))
+    for index, (time_start, time_end, freq_start, freq_end) in enumerate(event_windows):
+        ax.add_patch(patches.Rectangle((time_start, freq_start), time_end - time_start, freq_end - freq_start, linewidth=1, edgecolor=colors[index], facecolor='none'))
+
 def add_time_ticks_to_axis(ax, time_steps, step_size, sample_rate, max_tick_num = 16):
     
     time_span_sec = time_steps * step_size / sample_rate #calculate the time span in seconds
@@ -414,9 +419,10 @@ def save_spectrogram_plot(spectrogram_matrix, sample_rate, step_size, title = 'S
     spectrogram = ax.matshow(spectrogram_matrix, aspect="auto", cmap=plt.get_cmap('magma')) #draw matrix with colormap 'magma'
 
     if audio_events:
-        colors = cm.rainbow(np.linspace(0, 1, len(audio_events)))
-        for index, event in enumerate(audio_events):
-            ax.add_patch(patches.Rectangle((event[0], event[2]), event[1] - event[0], event[3] - event[2], linewidth=1, edgecolor=colors[index], facecolor='none'))
+        add_rectangles_to_axes(ax, audio_events)
+        # colors = cm.rainbow(np.linspace(0, 1, len(audio_events)))
+        # for index, (time_start, time_end, freq_start, freq_end) in enumerate(audio_events):
+        #     ax.add_patch(patches.Rectangle((time_start, freq_start), time_end - time_start, freq_end - freq_start, linewidth=1, edgecolor=colors[index], facecolor='none'))
 
     add_time_ticks_to_axis(ax, spectrogram_matrix.shape[1], step_size, sample_rate)
     

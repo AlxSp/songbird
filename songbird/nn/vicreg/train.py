@@ -15,7 +15,7 @@ import datetime
 import random
 import numpy as np
 import matplotlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 
 matplotlib.use('Agg')
@@ -32,7 +32,6 @@ class TrainerParameters:
 
 @dataclass
 class ModelParameters:
-    continue_training: bool = False
     in_channels: int = 1
     out_channels: int = 1
     dilation_growth_rate: int = 1
@@ -42,16 +41,24 @@ class ModelParameters:
 
 @dataclass
 class DatasetParameters:
+    dataset_name = f'test_pt_samples_0d{512}_1d{32}_iss{1}'
     batch_size: int = 512
     num_workers: int = 12
 
 @dataclass    
 class TrainRunParameters:
-    epochs: int = 15
+    continue_training: bool = False
+    epochs: int = 10
+    use_amp = False
 
 @dataclass    
 class OptimizerParameters:
     learning_rate: float = 1e-4
+    
+def get_parent_dir(path, num_levels = 1):
+    for _ in range(num_levels):
+        path = os.path.dirname(path)        
+    return path
 
 def get_run_dir(model_runs_dir, prefix = 'run'):
     run_index = 0
@@ -126,18 +133,14 @@ def create_data_loaders(train_set, test_set, batch_size):
 def add_hparams_to_writer(writer, hparam_dict, metric_dict = None):
     writer.add_hparams(hparam_dict,metric_dict)
 
-def get_model(in_channels, out_channels, dilation_growth_rate, dilation_depth, repeat_num, kernel_size):
-    model = resnet.Resnet1D(in_channels, out_channels, dilation_growth_rate, dilation_depth, repeat_num, kernel_size)
+def get_model(model_params):
+    model = resnet.Resnet1D(**asdict(model_params))
     return model
 
-
-
-    #%%
 def get_optimizer(model, learning_rate, use_amp):
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
     return optimizer, scaler
-
 
 def load_state(model, optimizer, model_dir):
     checkpoint_files = [f for f in os.listdir(model_dir) if f.endswith('.pt')] #parse checkpoint files
@@ -151,10 +154,7 @@ def load_state(model, optimizer, model_dir):
         
     return start_epoch
 
-
-    #    writer.add_scalar("Loss/test", test_loss / len(test_loader.dataset), epoch)
-
-def train(model, optimizer, scaler, train_loader, epoch, use_amp, device):
+def train(model, optimizer, scaler, train_loader, use_amp, device):
     model.train()
     
     start_time = time.time()
@@ -213,15 +213,18 @@ def validate(model, device, use_amp, test_loader):
 def train_run(model, optimizer, scaler, train_loader, test_loader, device, writer, use_amp, start_epoch, epochs):
     print(f"{'#'*3} {'Training' + ' ':{'#'}<{24}}")
     for epoch in range(start_epoch, epochs):
-        train_loss = train(model, optimizer, scaler, train_loader, epoch, use_amp, device)
-        validate(model, device, use_amp, test_loader)       
+        print(f"Epoch: {epoch}")
+        train_loss = train(model, optimizer, scaler, train_loader, use_amp, device)
+        valid_loss = validate(model, device, use_amp, test_loader)       
         
         writer.add_scalar("Loss/train", train_loss / len(train_loader.dataset), epoch)
+        writer.add_scalar("Loss/valid", valid_loss / len(test_loader.dataset), epoch)
+        
+    return train_loss, valid_loss
         
 def main():
-    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    dataset_name = f'test_pt_samples_0d{512}_1d{32}_iss{1}'
-    model_name = os.path.basename(vae.__file__).split('.')[0]
+    project_dir = get_parent_dir(os.path.abspath(__file__), num_levels = 4)
+    model_name = os.path.basename(resnet.__file__).split('.')[0]
     
     model_dir, report_dir, run_dir = create_run_dir(project_dir, model_name)
     writer = setup_writer(run_dir)
@@ -229,18 +232,19 @@ def main():
     trainer_params, model_params, dataset_params, train_run_params, optimizer_params = get_train_parameters()
     
     set_random_seed(trainer_params.random_seed) # for reproducibility set random seed before loading data
-    trainset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_name, 'train')
-    testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_name, 'test')
+    trainset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_params.dataset_name, 'train')
+    testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_params.dataset_name, 'test')
     train_set, test_set = load_data(trainset_path, testset_path)
+    
     train_loader, test_loader = create_data_loaders(train_set, test_set, batch_size = dataset_params.batch_size)
     
-    hparam_dict = trainer_params.to_dict()
-    add_hparams_to_writer(writer, hparam_dict)
+    hparam_dict = asdict(trainer_params)
+    add_hparams_to_writer(writer, hparam_dict, {})
     
-    model = get_model()
-    optimizer, scaler = get_optimizer(model, optimizer_params.learning_rate, optimizer_params.use_amp)
+    model = get_model(model_params)
+    optimizer, scaler = get_optimizer(model, optimizer_params.learning_rate, train_run_params.use_amp)
     
-    if model_params.continue_training:
+    if train_run_params.continue_training:
         start_epoch = load_state(model, optimizer, model_dir)
     else:
         start_epoch = 0
@@ -251,15 +255,15 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"{'#'*3} {'Training info' + ' ':{'#'}<{24}}")
     print(f"Using {device} device for training")
-    print(f"Using mixed precision: {use_amp}")
-    print(f"Epochs: {epochs}")
-    print(f"Batch size: {batch_size}")
+    print(f"Using mixed precision: {trainer_params.use_amp}")
+    print(f"Epochs: {train_run_params.epochs}")
+    print(f"Batch size: {dataset_params.batch_size}")
 
 
     model.to(device)
     
     set_random_seed(trainer_params.random_seed) # for reproducibility set random seed after the optimizer is initialized (may be not needed)
-    train_run(model, optimizer, scaler, train_loader, test_loader, device, writer, use_amp, start_epoch, epochs)
+    train_run(model, optimizer, scaler, train_loader, test_loader, device, writer, trainer_params.use_amp, start_epoch, train_run_params.epochs)
     
 if __name__ == "__main__":
     main()
