@@ -1,25 +1,25 @@
 #%%
 from songbird.dataset.dataset_info import DatasetInfo, SampleRecordingType
-from songbird.dataset.spectrogram_dataset import SpectrogramFileDataset, ToTensor
-from songbird.nn.vae.loss import mse_loss_function as loss_function #loss_function, 
-#from songbird.nn.vae.models.res_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
-# import songbird.nn.vae.models.reg2d_vae as vae
-#import songbird.nn.vae.models.conv2d_vae as vae
+from songbird.dataset.audio_dataset import AudioFileDataset as Dataset, ToTensor, PitchShift
+from songbird.nn.vicreg.loss import invariance_loss, variance_loss, covariance_loss, combine_losses #loss_function, 
+
 import songbird.nn.vicreg.models.resnet_1d as resnet
 
 #from songbird.nn.vae.models.res2d_vae import VariationalEncoder, VariationalDecoder, VariationalAutoEncoder
+from torchvision.transforms import Compose
 
 import os
 import time
 import datetime
 import random
+import json
 import numpy as np
 import matplotlib
 from dataclasses import asdict, dataclass
 
 
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+# matplotlib.use('Agg')
+# import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -29,6 +29,12 @@ from torch.utils.data import DataLoader
 class TrainerParameters:
     save_epoch_interval: int = 20
     random_seed: int = 44
+
+@dataclass    
+class TrainRunParameters:
+    continue_training: bool = False
+    epochs: int = 10
+    use_amp = False
 
 @dataclass
 class ModelParameters:
@@ -41,15 +47,10 @@ class ModelParameters:
 
 @dataclass
 class DatasetParameters:
-    dataset_name = f'test_pt_samples_0d{512}_1d{32}_iss{1}'
+    dataset_name = f'data/processed/audio/2022-06-04_13'
     batch_size: int = 512
     num_workers: int = 12
 
-@dataclass    
-class TrainRunParameters:
-    continue_training: bool = False
-    epochs: int = 10
-    use_amp = False
 
 @dataclass    
 class OptimizerParameters:
@@ -66,7 +67,6 @@ def get_run_dir(model_runs_dir, prefix = 'run'):
     while os.path.exists(run_dir):
         run_index += 1
         run_dir = os.path.join(model_runs_dir, f'{prefix}_{run_index}')
-
 
     return run_dir
 
@@ -113,8 +113,18 @@ def load_data(trainset_path, testset_path):
     else:
         print(f"Dataset found. Loading dataset from {trainset_path}")
 
-    train_set = SpectrogramFileDataset(trainset_path, transform=ToTensor())
-    test_set = SpectrogramFileDataset(testset_path, transform=ToTensor())
+    with open(os.path.join(trainset_path, "dataset_attributes.json"), 'r') as f:
+        dataset_attributes = json.load(f)['build_parameters']
+
+    sample_rate = dataset_attributes['sample_rate']
+
+    composed_transforms = Compose([
+        ToTensor(),
+    #    PitchShift(sample_rate)
+    ])
+
+    train_set = Dataset(trainset_path, transform=composed_transforms)
+    test_set = Dataset(testset_path, transform=composed_transforms)
 
     print(f"{'#'*3} {'Dataset info' + ' ':{'#'}<{24}}")
     print(f"Total dataset length: {len(train_set) + len(test_set)}")
@@ -162,12 +172,17 @@ def train(model, optimizer, scaler, train_loader, use_amp, device):
     samples_count = 0
     train_loss = 0
     
-    for batch, _, _ in train_loader:
+    for batch_x, batch_y, _, _ in train_loader:
         with torch.cuda.amp.autocast(enabled=use_amp):
-            batch = batch.to(device)
-            x_hat, mu, logvar = model(batch)
 
-            loss = loss_function(x_hat, batch, mu, logvar)
+            emb_x = model(batch_x.to(device))
+            emb_y = model(batch_y.to(device))
+
+            loss = combine_losses(
+                invariance_loss(emb_x, emb_y),
+                variance_loss(emb_x, emb_y),
+                covariance_loss(emb_x, emb_y),
+            )
         
         train_loss += loss.item()
         
@@ -178,7 +193,7 @@ def train(model, optimizer, scaler, train_loader, use_amp, device):
         # loss.backward()
         # optimizer.step()
 
-        samples_count += len(batch)
+        samples_count += len(batch_x)
         batch_count += 1
         
         print(f"batch: {int(batch_count/len(train_loader) * 100):3}% | train loss: {train_loss / samples_count:16.6f} | train time: {time.strftime('%H:%M:%S',time.time() - start_time)}", end = "\r")
@@ -199,9 +214,14 @@ def validate(model, device, use_amp, test_loader):
         with torch.cuda.amp.autocast(enabled=use_amp):
             batch = batch.to(device)
 
-            x_hat, mu, logvar = model(batch)
+            emb_x = model(batch_x)
+            emb_y = model(batch_y)
 
-            validation_loss += loss_function(x_hat, batch, mu, logvar).item()
+            loss = combine_losses(
+                invariance_loss(emb_x, emb_y),
+                variance_loss(emb_x, emb_y),
+                covariance_loss(emb_x, emb_y),
+            )
 
         batch_count += 1
         print(f"batch: {int(batch_count/len(test_loader) * 100):3}% | valid loss: {validation_loss / samples_count:16.6f} | valid time: {time.strftime('%H:%M:%S',time.time() - start_time)}", end = "\r")
@@ -232,8 +252,8 @@ def main():
     trainer_params, model_params, dataset_params, train_run_params, optimizer_params = get_train_parameters()
     
     set_random_seed(trainer_params.random_seed) # for reproducibility set random seed before loading data
-    trainset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_params.dataset_name, 'train')
-    testset_path = os.path.join(project_dir, 'data', 'spectrogram_samples', dataset_params.dataset_name, 'test')
+    trainset_path = os.path.join(project_dir, dataset_params.dataset_name, 'train')
+    testset_path = os.path.join(project_dir, dataset_params.dataset_name, 'test')
     train_set, test_set = load_data(trainset_path, testset_path)
     
     train_loader, test_loader = create_data_loaders(train_set, test_set, batch_size = dataset_params.batch_size)
@@ -255,7 +275,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"{'#'*3} {'Training info' + ' ':{'#'}<{24}}")
     print(f"Using {device} device for training")
-    print(f"Using mixed precision: {trainer_params.use_amp}")
+    print(f"Using mixed precision: {train_run_params.use_amp}")
     print(f"Epochs: {train_run_params.epochs}")
     print(f"Batch size: {dataset_params.batch_size}")
 
@@ -263,7 +283,7 @@ def main():
     model.to(device)
     
     set_random_seed(trainer_params.random_seed) # for reproducibility set random seed after the optimizer is initialized (may be not needed)
-    train_run(model, optimizer, scaler, train_loader, test_loader, device, writer, trainer_params.use_amp, start_epoch, train_run_params.epochs)
+    train_run(model, optimizer, scaler, train_loader, test_loader, device, writer, train_run_params.use_amp, start_epoch, train_run_params.epochs)
     
 if __name__ == "__main__":
     main()

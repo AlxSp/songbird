@@ -29,7 +29,7 @@ def covariance_loss(x, y):
 
     return loss_c_x + loss_c_y
 
-def combined_loss(invariance_loss, variance_loss, covariance_loss, invariance_weight, variance_weight, covariance_weight):
+def combine_losses(invariance_loss, variance_loss, covariance_loss, invariance_weight = 25, variance_weight = 25, covariance_weight = 1):
     return invariance_weight * invariance_loss + variance_weight * variance_loss + covariance_weight * covariance_loss
 
 

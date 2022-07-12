@@ -202,7 +202,7 @@ def convert_events_to_sample_slice_indices_array(events_arr, sampling_window_siz
         end_indices_arr.append(np.arange(sample_range_start_index + sampling_window_size, sample_range_end_index, sampling_step_size)) # get all end indices for the event
 
     if not len(start_indices_arr) > 0: #if there are no audio events
-        return []
+        return np.asarray([])
     
     start_indices_arr = np.concatenate(start_indices_arr) #concatenate all the slice indices into a single array
     end_indices_arr = np.concatenate(end_indices_arr) #concatenate all the slice indices into a single array
@@ -213,7 +213,7 @@ def convert_events_to_sample_slice_indices_array(events_arr, sampling_window_siz
     # sort the slice indices by start index
     sample_slice_indices_arr = sample_slice_indices_arr[sample_slice_indices_arr[:,0].argsort()]
     
-    return sample_slice_indices_arr
+    return np.asarray(sample_slice_indices_arr)
     
 
 def torch_create_audio_samples_from_events(
@@ -223,7 +223,7 @@ def torch_create_audio_samples_from_events(
         stft_step_size,
         frequency_range_size,
         lower_frequency_margin, 
-        sample_dim, 
+        sampling_window_size, 
         sampling_step_size, 
         sampling_padding_size,
         device = 'cpu'
@@ -242,11 +242,9 @@ def torch_create_audio_samples_from_events(
 
     audio_events_arr = [spectrogram_indices_to_time_series_indices(start_time_index, end_time_index, stft_window_size, stft_step_size) for start_time_index, end_time_index, _, _ in spectrogram_events_arr]
 
-    sample_slice_indices_arr = convert_events_to_sample_slice_indices_array(audio_events_arr, sample_dim[0], sampling_step_size, sampling_padding_size, len(audio_sample))
+    sample_slice_indices_arr = convert_events_to_sample_slice_indices_array(audio_events_arr, sampling_window_size, sampling_step_size, sampling_padding_size, len(audio_sample))
 
-    audio_sample_arr = np.asarray([audio_sample[start_index:end_index] for start_index, end_index in sample_slice_indices_arr])
-
-    return audio_sample_arr, sample_slice_indices_arr
+    return audio_sample, sample_slice_indices_arr
     
 def torch_create_spectrogram_samples(
         sample_id, 
@@ -377,15 +375,12 @@ def create_sequential_train_test_indices(sample_slice_range_arr, test_split = 0.
     test_start_slice_start, _ = sample_slice_range_arr[test_indices_arr[0]] # get the start index of the test samples
     train_indices_arr = all_indices[(sample_slice_range_arr[:,1] - test_start_slice_start <= 0)] # get the train indices. 
 
+    # print(sample_count - len(test_indices_arr) - len(train_indices_arr)) # number of samples that are excluded from test and train
+
     if np.any(np.in1d(train_indices_arr, test_indices_arr)): #make sure the train and test indices are not the same
         raise ValueError(f"Train and test indices are overlapping. Number of indices that appear in both sets `{np.sum(train_indices_arr == test_indices_arr)}`")
 
     return train_indices_arr, test_indices_arr
-
-
-    #consecutive_sample_indices_arr = np.split(all_indices, np.where(np.diff(sample_slice_indices_arr[:,0]) != sampling_step_size)[0] + 1) #split the indices into consecutive indices
-    #consecutive_sample_lengths_arr = np.array([len(consecutive_indices) for consecutive_indices in consecutive_sample_indices_arr]) #get the length of each consecutive indices array
-
 
 
 def create_random_train_test_indices(sample_slice_indices_arr, sampling_window_size, sampling_step_size, sampling_padding_size, test_split = 0.1):
@@ -433,6 +428,46 @@ def create_random_train_test_indices(sample_slice_indices_arr, sampling_window_s
         
     return train_indices_arr, test_indices_arr
 
+def group_subsequent_values(value_array, step_size=1):
+    """
+    Return list of subsequent lists of numbers from vals which are below or meet the step size.
+    
+    ----------
+    value_array : array-like 
+        Ascending ordered array of values to group.
+    """
+    run = [value_array[0]]
+    result = [run]
+    for value in value_array[1:]:
+        if run[-1] + step_size >= value:
+            run.append(value)
+        else:
+            run = [value]
+            result.append(run)
+
+    return result
+
+def compact_audio_data(audio_sample, sample_offsets_arr, sampling_window_size):
+
+    sample_range_group_arr = group_subsequent_values(sample_offsets_arr, sampling_window_size) # sampling window size is used so overlapping samples are grouped together
+
+    compacted_audio_data = []
+    compacted_sample_offsets = []
+    group_offset = 0
+    for group_indices in sample_range_group_arr:
+        group_start = group_indices[0]
+        group_end = group_indices[-1] + sampling_window_size
+
+        compacted_audio_data.append(audio_sample[group_start:group_end])
+        compacted_sample_offsets += [start - group_start + group_offset for start in group_indices]
+        
+        group_offset += group_end - group_start
+
+    compacted_audio_data = np.concatenate(compacted_audio_data)
+
+    return compacted_audio_data, np.asarray(compacted_sample_offsets)
+
+
 def pytorch_create_samples_from_audio(
         dataset_path, 
         sample_id, 
@@ -450,12 +485,14 @@ def pytorch_create_samples_from_audio(
     ):
     
     set_random_seed(random_seed)
+
+    sampling_window_size = sample_dim[0]
     
-    audio_sample_arr, sample_slice_range_arr = torch_create_audio_samples_from_events(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sample_dim, sampling_step_size, sampling_padding_size, device)
+    audio_sample, sample_slice_range_arr = torch_create_audio_samples_from_events(sample_id, sample_rate, stft_window_size, stft_step_size, frequency_range_size, lower_frequency_margin, sampling_window_size, sampling_step_size, sampling_padding_size, device)
     
-    if audio_sample_arr.size != 0:
-        sample_max = np.max(audio_sample_arr).astype(np.float32)
-        sample_min = np.min(audio_sample_arr).astype(np.float32)
+    if sample_slice_range_arr.size != 0:
+        # sample_max = np.max(audio_sample_arr).astype(np.float32)
+        # sample_min = np.min(audio_sample_arr).astype(np.float32)
     
         if validation_split > 0.0:
             train_data_path = os.path.join(dataset_path, 'train', 'data')
@@ -464,61 +501,131 @@ def pytorch_create_samples_from_audio(
             test_data_path = os.path.join(dataset_path, 'test', 'data')
             test_samples_file_path = os.path.join(test_data_path, f"{sample_id}.bin")
 
-            train_indices, test_indices = create_sequential_train_test_indices(sample_slice_range_arr, sample_dim[0], sampling_step_size, test_split = validation_split)
-            
-            np.asarray(audio_sample_arr[train_indices], dtype = np.float32).tofile(train_samples_file_path)
-            train_data_info_path = os.path.join(dataset_path, 'train', 'data_info')
-            train_data_info_file_path = os.path.join(train_data_info_path, f"{sample_id}.json")
-            
-            train_spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_range_arr[train_indices]]
-            
-            with open(train_data_info_file_path, 'w') as f:
-                json.dump( #spectrogram_img_info_arr, f)
-                    {
-                        "max" : float(sample_max),
-                        "min" : float(sample_min),
-                        "sample_indices" : train_spectrogram_sample_info_arr
-                    }, f)
+            train_indices, test_indices = create_sequential_train_test_indices(sample_slice_range_arr, test_split = validation_split)
+
+            if train_indices.size != 0:
+
+                train_slice_range_arr = sample_slice_range_arr[train_indices]
+
+                compact_train_audio_data, compact_train_sample_offsets = compact_audio_data(audio_sample, train_slice_range_arr[:,0], sampling_window_size)
+
+
+
+                random_index = np.random.randint(0, len(train_indices))
+                compact_train_offset = compact_train_sample_offsets[random_index]
+                audio_sample_start, audio_sample_end = train_slice_range_arr[random_index]
+                assert (compact_train_audio_data[compact_train_offset:compact_train_offset + sampling_window_size] == audio_sample[audio_sample_start:audio_sample_end]).all()
+                
+
+                np.asarray(compact_train_audio_data, dtype = np.float32).tofile(train_samples_file_path)
+                train_data_info_path = os.path.join(dataset_path, 'train', 'data_info')
+                train_data_info_file_path = os.path.join(train_data_info_path, f"{sample_id}.json")
+                
+                compact_train_sample_offsets = compact_train_sample_offsets.tolist()
+                train_spectrogram_sample_info_arr = [{"start_index" : start_index, "end_index" : start_index + sampling_window_size} for start_index in compact_train_sample_offsets]
+                
+                with open(train_data_info_file_path, 'w') as f:
+                    json.dump( #spectrogram_img_info_arr, f)
+                        {
+                            # "max" : float(sample_max),
+                            # "min" : float(sample_min),
+                            "sample_offsets" : train_spectrogram_sample_info_arr
+                        }, f)
                 
             if test_indices.size != 0:
-                np.asarray(audio_sample_arr[test_indices], dtype = np.float32).tofile(test_samples_file_path)
+                test_slice_range_arr = sample_slice_range_arr[test_indices]
+                
+                compact_test_audio_data, compact_test_sample_offsets = compact_audio_data(audio_sample, test_slice_range_arr[:,0], sampling_window_size)
+
+                np.asarray(compact_test_audio_data, dtype = np.float32).tofile(test_samples_file_path)
                             
                 test_data_info_path = os.path.join(dataset_path, 'test', 'data_info')
                 test_data_info_file_path = os.path.join(test_data_info_path, f"{sample_id}.json")     
-            
-                test_spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_range_arr[test_indices]]
+
+                compact_test_sample_offsets = compact_test_sample_offsets.tolist()
+                test_spectrogram_sample_info_arr = [{"start_index" : start_index, "end_index" : start_index + sampling_window_size} for start_index in compact_test_sample_offsets]
             
                 with open(test_data_info_file_path, 'w') as f:
                     json.dump( #spectrogram_img_info_arr, f)
                         {
-                            "max" : float(sample_max),
-                            "min" : float(sample_min),
-                            "sample_indices" : test_spectrogram_sample_info_arr
+                            # "max" : float(sample_max),
+                            # "min" : float(sample_min),
+                            "sample_offsets" : test_spectrogram_sample_info_arr
                         }, f)
                                 
         else:
             data_path = os.path.join(dataset_path, 'data')
             samples_file_path = os.path.join(data_path, f"{sample_id}.bin")
-        # save the spectrogram samples
-            np.asarray(audio_sample_arr, dtype = np.float32).tofile(samples_file_path)
+            # save the spectrogram samples
+            compacted_audio_data, compact_sample_offsets = compact_audio_data(audio_sample, sample_slice_range_arr[:,0], sampling_window_size)
 
+            np.asarray(compacted_audio_data, dtype = np.float32).tofile(samples_file_path)
             
             data_info_path = os.path.join(dataset_path, 'data_info')
             data_info_file_path = os.path.join(data_info_path, f"{sample_id}.json")
             # calculate the spectrogram max and min values
-
-            spectrogram_sample_info_arr = [{"start_index" : start_index.item(), "end_index" : end_index.item()} for start_index, end_index in sample_slice_range_arr]
+            compact_sample_offsets = compact_sample_offsets.tolist()
+            spectrogram_sample_info_arr = [{"start_index" : start_index, "end_index" : start_index + sampling_window_size} for start_index in compact_sample_offsets]
         
             with open(data_info_file_path, 'w') as f:
                 json.dump( #spectrogram_img_info_arr, f)
                     {
-                        "max" : float(sample_max),
-                        "min" : float(sample_min),
-                        "sample_indices" : spectrogram_sample_info_arr
+                        # "max" : float(sample_max),
+                        # "min" : float(sample_min),
+                        "sample_offsets" : spectrogram_sample_info_arr
                     }, f)
 
     else:
         print(f"No audio events found for sample {sample_id}")
+
+def save_dataset_attributes(
+    dataset_path,
+    start_time,
+    end_time,
+    samples_count,
+    sample_type,
+    sample_rate,
+    stft_window_size,
+    stft_step_size,
+    sample_dim,
+    sampling_step_size,
+    sampling_padding_size,
+    frequency_range_size,
+    lower_frequency_margin,
+    validation_split,
+    random_seed,
+    num_workers,
+    device,
+    sample_ids
+    ):
+
+    with open(os.path.join(dataset_path, 'dataset_attributes.json'), 'w') as f:
+            json.dump({
+                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "time_taken_sec" : (end_time - start_time).total_seconds(),
+                "samples_count" : samples_count,
+                # "max_value" : float(max_value),
+                # "min_value" : float(min_value),
+                
+                "build_parameters" : {
+                    "dataset_path" : dataset_path,
+                    "sample_type" : sample_type,
+                    "sample_rate" : sample_rate,
+                    "stft_window_size" : stft_window_size,
+                    "stft_step_size" : stft_step_size,
+                    "sample_dim" : list(sample_dim), 
+                    "sampling_step_size" : sampling_step_size, 
+                    "sampling_padding_size" : sampling_padding_size,
+                    "frequency_range_size" : frequency_range_size, 
+                    "lower_frequency_margin" : lower_frequency_margin, 
+                    "validation_split" : validation_split,
+                    "random_seed" : random_seed,
+                    "num_workers" : num_workers,
+                    "device" : device,
+                    "sample_ids" : sample_ids,
+                }
+            }, f, indent=2)
 
 def pytorch_create_and_save_dateset(
         dataset_path, 
@@ -594,115 +701,176 @@ def pytorch_create_and_save_dateset(
         for data_info_file in os.listdir(train_data_info_path): 
             with open(os.path.join(train_data_info_path, data_info_file), 'r') as f:
                 data_info = json.load(f)
-                max_value = max(max_value, data_info['max'])
-                min_value = min(min_value, data_info['min'])
-                samples_count += len(data_info['sample_indices'])
+                # max_value = max(max_value, data_info['max'])
+                # min_value = min(min_value, data_info['min'])
+                samples_count += len(data_info['sample_offsets'])
                 
         for data_info_file in os.listdir(test_data_info_path): 
             with open(os.path.join(test_data_info_path, data_info_file), 'r') as f:
                 data_info = json.load(f)
                 # max_value = max(max_value, data_info['max'])
                 # min_value = min(min_value, data_info['min'])
-                samples_count += len(data_info['sample_indices'])
+                samples_count += len(data_info['sample_offsets'])
         
                 
         end_time = datetime.now()
-        time_taken_sec = (end_time - start_time).total_seconds()
+        # time_taken_sec = (end_time - start_time).total_seconds()
 
-        with open(os.path.join(os.path.join(dataset_path, 'train'), 'dataset_attributes.json'), 'w') as f:
-            json.dump({
-                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "time_taken_sec" : time_taken_sec,
-                "samples_count" : samples_count,
-                "max_value" : float(max_value),
-                "min_value" : float(min_value),
+        save_dataset_attributes(
+            os.path.join(dataset_path, 'train'),
+            start_time,
+            end_time,
+            samples_count,
+            sample_type,
+            sample_rate,
+            stft_window_size,
+            stft_step_size,
+            sample_dim,
+            sampling_step_size,
+            sampling_padding_size,
+            frequency_range_size,
+            lower_frequency_margin,
+            validation_split,
+            random_seed,
+            num_workers,
+            device,
+            sample_ids
+            )
+
+        save_dataset_attributes(
+            os.path.join(dataset_path, 'test'),
+            start_time,
+            end_time,
+            samples_count,
+            sample_type,
+            sample_rate,
+            stft_window_size,
+            stft_step_size,
+            sample_dim,
+            sampling_step_size,
+            sampling_padding_size,
+            frequency_range_size,
+            lower_frequency_margin,
+            validation_split,
+            random_seed,
+            num_workers,
+            device,
+            sample_ids
+            )
+
+        # with open(os.path.join(, 'dataset_attributes.json'), 'w') as f:
+        #     json.dump({
+        #         "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+        #         "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+        #         "time_taken_sec" : time_taken_sec,
+        #         "samples_count" : samples_count,
+        #         # "max_value" : float(max_value),
+        #         # "min_value" : float(min_value),
                 
-                "build_parameters" : {
-                    "dataset_path" : dataset_path,
-                    "sample_type" : sample_type,
-                    "sample_ids" : sample_ids, 
-                    "sample_rate" : sample_rate,
-                    "stft_window_size" : stft_window_size,
-                    "stft_step_size" : stft_step_size,
-                    "sample_dim" : list(sample_dim), 
-                    "sampling_step_size" : sampling_step_size, 
-                    "sampling_padding_size" : sampling_padding_size,
-                    "frequency_range_size" : frequency_range_size, 
-                    "lower_frequency_margin" : lower_frequency_margin, 
-                    "validation_split" : validation_split,
-                    "random_seed" : random_seed,
-                    "num_workers" : num_workers,
-                    "device" : device
-                }
-            }, f, indent=2)
+        #         "build_parameters" : {
+        #             "dataset_path" : dataset_path,
+        #             "sample_type" : sample_type,
+        #             "sample_rate" : sample_rate,
+        #             "stft_window_size" : stft_window_size,
+        #             "stft_step_size" : stft_step_size,
+        #             "sample_dim" : list(sample_dim), 
+        #             "sampling_step_size" : sampling_step_size, 
+        #             "sampling_padding_size" : sampling_padding_size,
+        #             "frequency_range_size" : frequency_range_size, 
+        #             "lower_frequency_margin" : lower_frequency_margin, 
+        #             "validation_split" : validation_split,
+        #             "random_seed" : random_seed,
+        #             "num_workers" : num_workers,
+        #             "device" : device,
+        #             "sample_ids" : sample_ids,
+        #         }
+        #     }, f, indent=2)
             
-        with open(os.path.join(os.path.join(dataset_path, 'test'), 'dataset_attributes.json'), 'w') as f:
-            json.dump({
-                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "time_taken_sec" : time_taken_sec,
-                "samples_count" : samples_count,
-                "max_value" : float(max_value),
-                "min_value" : float(min_value),
+        # with open(os.path.join(os.path.join(dataset_path, 'test'), 'dataset_attributes.json'), 'w') as f:
+        #     json.dump({
+        #         "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+        #         "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+        #         "time_taken_sec" : time_taken_sec,
+        #         "samples_count" : samples_count,
+        #         # "max_value" : float(max_value),
+        #         # "min_value" : float(min_value),
                 
-                "build_parameters" : {
-                    "dataset_path" : dataset_path,
-                    "sample_type" : sample_type,
-                    "sample_ids" : sample_ids, 
-                    "sample_type" : sample_type,
-                    "sample_rate" : sample_rate,
-                    "stft_window_size" : stft_window_size,
-                    "stft_step_size" : stft_step_size,
-                    "sample_dim" : list(sample_dim), 
-                    "sampling_step_size" : sampling_step_size, 
-                    "sampling_padding_size" : sampling_padding_size,
-                    "frequency_range_size" : frequency_range_size, 
-                    "lower_frequency_margin" : lower_frequency_margin, 
-                    "validation_split" : validation_split,
-                    "random_seed" : random_seed,
-                    "num_workers" : num_workers,
-                    "device" : device
-                }
-            }, f, indent=2)
+        #         "build_parameters" : {
+        #             "dataset_path" : dataset_path,
+        #             "sample_type" : sample_type,
+        #             "sample_type" : sample_type,
+        #             "sample_rate" : sample_rate,
+        #             "stft_window_size" : stft_window_size,
+        #             "stft_step_size" : stft_step_size,
+        #             "sample_dim" : list(sample_dim), 
+        #             "sampling_step_size" : sampling_step_size, 
+        #             "sampling_padding_size" : sampling_padding_size,
+        #             "frequency_range_size" : frequency_range_size, 
+        #             "lower_frequency_margin" : lower_frequency_margin, 
+        #             "validation_split" : validation_split,
+        #             "random_seed" : random_seed,
+        #             "num_workers" : num_workers,
+        #             "device" : device,
+        #             "sample_ids" : sample_ids,
+        #         }
+        #     }, f, indent=2)
             
     else:
         for data_info_file in os.listdir(data_info_path): 
             with open(os.path.join(data_info_path, data_info_file), 'r') as f:
                 data_info = json.load(f)
-                max_value = max(max_value, data_info['max'])
-                min_value = min(min_value, data_info['min'])
-                samples_count += len(data_info['sample_indices'])
+                # max_value = max(max_value, data_info['max'])
+                # min_value = min(min_value, data_info['min'])
+                samples_count += len(data_info['sample_offsets'])
 
         end_time = datetime.now()
-        time_taken_sec = (end_time - start_time).total_seconds()
+        # time_taken_sec = (end_time - start_time).total_seconds()
 
-
-        with open(os.path.join(dataset_path, 'dataset_attributes.json'), 'w') as f:
-            json.dump({
-                "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "time_taken_sec" : time_taken_sec,
-                "samples_count" : samples_count,
-                "max_value" : float(max_value),
-                "min_value" : float(min_value),
-                "build_parameters" : {
-                    "dataset_path" : dataset_path,
-                    "sample_ids" : sample_ids, 
-                    "sample_rate" : sample_rate,
-                    "stft_window_size" : stft_window_size,
-                    "stft_step_size" : stft_step_size,
-                    "sample_dim" : list(sample_dim), 
-                    "sampling_step_size" : sampling_step_size, 
-                    "sampling_padding_size" : sampling_padding_size,
-                    "frequency_range_size" : frequency_range_size, 
-                    "lower_frequency_margin" : lower_frequency_margin, 
-                    "validation_split" : validation_split,
-                    "random_seed" : random_seed,
-                    "num_workers" : num_workers,
-                    "device" : device
-                }
-            }, f, indent=2)
+        save_dataset_attributes(
+            dataset_path,
+            start_time,
+            end_time,
+            samples_count,
+            sample_type,
+            sample_rate,
+            stft_window_size,
+            stft_step_size,
+            sample_dim,
+            sampling_step_size,
+            sampling_padding_size,
+            frequency_range_size,
+            lower_frequency_margin,
+            validation_split,
+            random_seed,
+            num_workers,
+            device,
+            sample_ids
+            )
+        # with open(os.path.join(dataset_path, 'dataset_attributes.json'), 'w') as f:
+        #     json.dump({
+        #         "start_date" : start_time.strftime("%Y-%m-%d %H:%M:%S"),
+        #         "end_date" : end_time.strftime("%Y-%m-%d %H:%M:%S"),
+        #         "time_taken_sec" : time_taken_sec,
+        #         "samples_count" : samples_count,
+        #         # "max_value" : float(max_value),
+        #         # "min_value" : float(min_value),
+        #         "build_parameters" : {
+        #             "dataset_path" : dataset_path,
+        #             "sample_rate" : sample_rate,
+        #             "stft_window_size" : stft_window_size,
+        #             "stft_step_size" : stft_step_size,
+        #             "sample_dim" : list(sample_dim), 
+        #             "sampling_step_size" : sampling_step_size, 
+        #             "sampling_padding_size" : sampling_padding_size,
+        #             "frequency_range_size" : frequency_range_size, 
+        #             "lower_frequency_margin" : lower_frequency_margin, 
+        #             "validation_split" : validation_split,
+        #             "random_seed" : random_seed,
+        #             "num_workers" : num_workers,
+        #             "device" : device,
+        #             "sample_ids" : sample_ids, 
+        #         }
+        #     }, f, indent=2)
 
 if __name__ == "__main__":
     
@@ -745,7 +913,7 @@ if __name__ == "__main__":
         lower_frequency_margin: int  = 100
         validation_split: int  = 0.1
         random_seed: int  = 42
-        num_workers: int  = 1
+        num_workers: int  = 12
         device: str = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
     dataset_params = AudioDatasetParameters()
@@ -763,7 +931,7 @@ if __name__ == "__main__":
     for species_id in species_ids:
         sample_ids += dataset_info.get_downloaded_species_sample_ids(species_id, recording_type)
     
-    sample_ids = list(set(sample_ids))[:15] # ensure that the sample ids are unique (no duplicates)
+    sample_ids = list(set(sample_ids)) # ensure that the sample ids are unique (no duplicates)
     
     # recording_type = SampleRecordingType.Foreground
     
